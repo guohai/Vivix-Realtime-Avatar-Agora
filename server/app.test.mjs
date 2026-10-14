@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import http from "node:http";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +7,7 @@ import { createApp } from "./app.mjs";
 import { UpstreamError } from "./upstream.mjs";
 
 const HEX = "0123456789abcdef0123456789abcdef";
+const SENTINEL = "SENTINEL-OUTSIDE-STATIC-DIR";
 const body = { agora: { appId: HEX, certificate: HEX, pipelineId: "pipe" }, vivix: { apiKey: "vk" } };
 const vivixSession = { sessionId: "s-1", control: { url: "wss://c", clientSecret: "cs" }, media: {} };
 const convoSession = { agentId: "ag-1", appId: HEX, channel: "ch", uid: 1, token: "t", agentUid: 2 };
@@ -14,8 +15,11 @@ const convoSession = { agentId: "ag-1", appId: HEX, channel: "ch", uid: 1, token
 let server, base, calls, deps;
 beforeEach(async () => {
   calls = [];
-  const dir = mkdtempSync(join(tmpdir(), "vx-static-"));
-  mkdirSync(join(dir, "assets"));
+  // staticDir is <root>/site, so <root>/secret.txt sits outside the served tree.
+  const root = mkdtempSync(join(tmpdir(), "vx-static-"));
+  const dir = join(root, "site");
+  mkdirSync(join(dir, "assets"), { recursive: true });
+  writeFileSync(join(root, "secret.txt"), SENTINEL);
   writeFileSync(join(dir, "index.html"), "<h1>demo</h1>");
   writeFileSync(join(dir, "assets", "app.js"), "console.log(1)");
   deps = {
@@ -33,6 +37,18 @@ beforeEach(async () => {
 afterEach(() => new Promise(r => server.close(r)));
 
 const post = (path, b) => fetch(base + path, { method: "POST", body: typeof b === "string" ? b : JSON.stringify(b) });
+
+// Raw request: fetch would normalize dot segments and %2e before sending.
+const rawGet = path => new Promise((resolve, reject) => {
+  const req = http.request({ host: "127.0.0.1", port: server.address().port, path, method: "GET" }, res => {
+    let data = "";
+    res.setEncoding("utf8");
+    res.on("data", c => { data += c; });
+    res.on("end", () => resolve({ status: res.statusCode, body: data }));
+  });
+  req.on("error", reject);
+  req.end();
+});
 
 describe("POST /api/session", () => {
   it("creates both sides and reports timings", async () => {
@@ -74,6 +90,20 @@ describe("POST /api/session", () => {
     expect(calls).toContainEqual(["leave", { appId: HEX, certificate: HEX, agentId: "ag-1" }]);
   });
 
+  it("logs a failed rollback close with the session ID and still returns the join error", async () => {
+    deps.joinAgent = async () => { throw new UpstreamError("ConvoAI", "nope", 400); };
+    deps.closeSession = async () => { throw new UpstreamError("Vivix", "down", 500); };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await post("/api/session", body);
+      expect(res.status).toBe(502);
+      expect((await res.json()).error).toBe("ConvoAI: nope");
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining("Vivix session s-1"));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("rejects invalid JSON and oversized bodies", async () => {
     expect((await post("/api/session", "{")).status).toBe(400);
     expect((await post("/api/session", "x".repeat(70_000))).status).toBe(413);
@@ -95,6 +125,14 @@ describe("POST /api/session/stop", () => {
     expect((await res.json()).error).toBe("ConvoAI: boom");
     expect(calls.map(c => c[0])).toEqual(["close"]);
   });
+
+  it("reports every failure when both sides fail", async () => {
+    deps.leaveAgent = async () => { throw new UpstreamError("ConvoAI", "boom", 500); };
+    deps.closeSession = async () => { throw new UpstreamError("Vivix", "gone", 500); };
+    const res = await post("/api/session/stop", { ...body, agentId: "ag-1", vivixSessionId: "s-1" });
+    expect(res.status).toBe(502);
+    expect((await res.json()).error).toBe("ConvoAI: boom; Vivix: gone");
+  });
 });
 
 describe("POST /api/session/interrupt", () => {
@@ -113,7 +151,15 @@ describe("static and health", () => {
     const asset = await fetch(base + "/assets/app.js");
     expect(asset.headers.get("content-type")).toBe("text/javascript");
     expect(asset.headers.get("cache-control")).toMatch(/immutable/);
-    expect((await fetch(base + "/%2e%2e/%2e%2e/etc/passwd")).status).toBe(404);
     expect((await fetch(base + "/missing.js")).status).toBe(404);
+  });
+
+  it("refuses traversal to a file outside the static dir", async () => {
+    // "/..%2fsecret.txt" decodes to "/../secret.txt" and reaches the guard; it must not be served.
+    for (const path of ["/..%2f..%2fsecret.txt", "/..%2fsecret.txt", "/../secret.txt"]) {
+      const res = await rawGet(path);
+      expect(res.status, path).toBe(404);
+      expect(res.body, path).not.toContain(SENTINEL);
+    }
   });
 });

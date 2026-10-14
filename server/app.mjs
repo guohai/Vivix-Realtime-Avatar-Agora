@@ -31,11 +31,24 @@ async function timed(timings, key, fn) {
   try { return await fn(); } finally { timings[key] = Math.round(performance.now() - t); }
 }
 
+// Runs fn and turns a synchronous throw into a rejection, so every side is attempted.
+const attempt = fn => (async () => fn())();
+
+// Several sides failed: report all of them, joined. Still an UpstreamError, so it maps to 502.
+class UpstreamFailures extends UpstreamError {
+  constructor(messages) {
+    super("Session", "", 502);
+    this.message = messages.join("; ");
+  }
+}
+
 // allSettled so a failure on one side never leaves the other running unobserved.
 async function settleAll(tasks) {
-  const results = await Promise.allSettled(tasks.filter(Boolean));
-  const failed = results.find(r => r.status === "rejected");
-  if (failed) throw failed.reason;
+  const failures = (await Promise.allSettled(tasks.filter(Boolean)))
+    .filter(r => r.status === "rejected")
+    .map(r => r.reason);
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new UpstreamFailures(failures.map(e => String(e?.message ?? e)));
 }
 
 export function createApp(deps) {
@@ -50,10 +63,21 @@ export function createApp(deps) {
       timed(timings, "convoJoinMs", () => joinAgent(agora)),
     ]);
     if (v.status === "rejected" || c.status === "rejected") {
-      await Promise.allSettled([
-        v.status === "fulfilled" && closeSession({ apiKey: vivix.apiKey, sessionId: v.value.sessionId }),
-        c.status === "fulfilled" && leaveAgent({ appId: agora.appId, certificate: agora.certificate, agentId: c.value.agentId }),
-      ]);
+      const rollbacks = [];
+      if (v.status === "fulfilled") {
+        rollbacks.push({ label: `Vivix session ${v.value.sessionId}`,
+          run: () => closeSession({ apiKey: vivix.apiKey, sessionId: v.value.sessionId }) });
+      }
+      if (c.status === "fulfilled") {
+        rollbacks.push({ label: `ConvoAI agent ${c.value.agentId}`,
+          run: () => leaveAgent({ appId: agora.appId, certificate: agora.certificate, agentId: c.value.agentId }) });
+      }
+      const results = await Promise.allSettled(rollbacks.map(r => attempt(r.run)));
+      results.forEach((r, i) => {
+        if (r.status === "rejected") {
+          console.error(`Rollback failed: ${rollbacks[i].label} left open: ${String(r.reason?.message ?? r.reason)}`);
+        }
+      });
       throw v.status === "rejected" ? v.reason : c.reason;
     }
     return { vivix: v.value, convo: c.value, timings };
@@ -62,8 +86,8 @@ export function createApp(deps) {
   async function stopSession(body) {
     const r = stopRequest(body);
     await settleAll([
-      r.agentId && leaveAgent({ ...r.agora, agentId: r.agentId }),
-      r.vivixSessionId && closeSession({ apiKey: r.vivixApiKey, sessionId: r.vivixSessionId }),
+      r.agentId && attempt(() => leaveAgent({ ...r.agora, agentId: r.agentId })),
+      r.vivixSessionId && attempt(() => closeSession({ apiKey: r.vivixApiKey, sessionId: r.vivixSessionId })),
     ]);
     return { ok: true };
   }
@@ -100,8 +124,9 @@ export function createApp(deps) {
     } catch (e) {
       if (e instanceof HttpError) return send(res, e.status, { error: e.message, ...(e.field && { field: e.field }) });
       if (e instanceof UpstreamError) return send(res, 502, { error: e.message });
+      const msg = String(e?.message ?? "");
       console.error(e);
-      send(res, 500, { error: e.message?.startsWith("ConvoAI:") ? e.message : "Internal error" });
+      send(res, 500, { error: msg.startsWith("ConvoAI:") ? msg : "Internal error" });
     }
   };
 }
