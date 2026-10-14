@@ -1,6 +1,6 @@
 import "./style.css";
-import { FIELDS, SERVER_FIELD, loadCredentials, saveCredentials, validate, type Credentials } from "./config";
-import { ApiError } from "./api";
+import { FIELDS, SERVER_FIELD, loadCredentials, saveCredentials, validate, type Covered, type Credentials } from "./config";
+import { ApiError, fetchCovered } from "./api";
 import { Session, CancelledError } from "./session";
 import type { Line } from "./transcript";
 
@@ -30,6 +30,12 @@ for (const f of FIELDS) {
   form.append(label);
   inputs[f.key] = input;
 }
+
+let covered: Covered = {};
+void fetchCovered().then(c => {
+  covered = c;
+  for (const f of FIELDS) if (c[f.key]) inputs[f.key].placeholder = "Leave blank to use the server's";
+});
 
 const read = (): Credentials => Object.fromEntries(FIELDS.map(f => [f.key, inputs[f.key].value])) as unknown as Credentials;
 function showErrors(errors: Partial<Record<keyof Credentials, string>>) {
@@ -83,7 +89,7 @@ async function stop(reason?: string) {
 
 startBtn.onclick = async () => {
   const creds = read();
-  const errors = validate(creds);
+  const errors = validate(creds, covered);
   showErrors(errors);
   if (Object.keys(errors).length) { status.textContent = "Fix the highlighted fields."; return; }
   try { saveCredentials(localStorage, creds, remember.checked); }

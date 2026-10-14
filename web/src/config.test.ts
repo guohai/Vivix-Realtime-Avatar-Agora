@@ -43,3 +43,13 @@ describe("toSessionBody", () => {
       agora: { appId: HEX, certificate: HEX, pipelineId: "p", persona: "Be brief" }, vivix: { apiKey: "vk", imageUrl: "https://a/b.png" } });
   });
 });
+
+describe("validate with server defaults", () => {
+  it("does not require fields the server covers, but still checks typed ones", () => {
+    const blank: Credentials = { ...full, agoraAppId: "", agoraCertificate: "", pipelineId: "", vivixApiKey: "" };
+    const all = { agoraAppId: true, agoraCertificate: true, pipelineId: true, vivixApiKey: true };
+    expect(validate(blank, all)).toEqual({});
+    expect(validate({ ...blank, agoraAppId: "xyz" }, all)).toEqual({ agoraAppId: "32 hex characters" });
+    expect(validate(blank, { vivixApiKey: true })).toEqual({ agoraAppId: "Required", agoraCertificate: "Required", pipelineId: "Required" });
+  });
+});

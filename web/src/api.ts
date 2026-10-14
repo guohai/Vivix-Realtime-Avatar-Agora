@@ -1,4 +1,4 @@
-import type { SessionBody } from "./config";
+import type { Covered, SessionBody } from "./config";
 
 export interface AgoraMedia { appId: string; channel: string; token: string; uid: string; publisherUid: string }
 export interface VivixSession { sessionId: string; control: { url: string; clientSecret: string }; media: AgoraMedia }
@@ -22,6 +22,14 @@ async function post<T>(path: string, body: unknown, keepalive = false): Promise<
 export const startSession = (body: SessionBody) => post<StartResponse>("/api/session", body);
 export const stopSession = (body: StopBody) => post<void>("/api/session/stop", body, true); // keepalive: survives the tab closing mid-Stop
 export const interruptAgent = (body: InterruptBody) => post<void>("/api/session/interrupt", body);
+
+// Which credential fields the server fills when left blank. Older servers: nothing covered.
+export async function fetchCovered(): Promise<Covered> {
+  try {
+    const res = await fetch("/api/defaults");
+    return res.ok ? ((await res.json()) as Covered) : {};
+  } catch { return {}; }
+}
 
 // For pagehide: survives the page going away. text/plain keeps it a simple request.
 export const beaconStop = (body: StopBody) =>

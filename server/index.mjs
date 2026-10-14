@@ -15,7 +15,13 @@ const tls = process.env.TLS_CERT && process.env.TLS_KEY
   : null;
 const publicHost = process.env.PUBLIC_HOST || (host === "0.0.0.0" ? "localhost" : host);
 const staticDir = fileURLToPath(new URL("../web/dist", import.meta.url));
-const app = createApp({ createSession, closeSession, joinAgent, leaveAgent, interruptAgent, staticDir });
+// Optional credential defaults for fields left blank on the page (see README). Never sent to it.
+const env = k => (process.env[k] ?? "").trim();
+const defaults = {
+  agora: { appId: env("AGORA_APP_ID"), certificate: env("AGORA_APP_CERTIFICATE"), pipelineId: env("AGORA_PIPELINE_ID") },
+  vivix: { apiKey: env("VIVIX_API_KEY") },
+};
+const app = createApp({ createSession, closeSession, joinAgent, leaveAgent, interruptAgent, staticDir, defaults });
 
 (tls ? https.createServer(tls, app) : http.createServer(app)).listen(port, host, function () {
   console.log(`Vivix × ConvoAI demo on ${tls ? "https" : "http"}://${publicHost}:${this.address().port}`);

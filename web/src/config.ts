@@ -47,9 +47,12 @@ export function saveCredentials(storage: Pick<Storage, "setItem" | "removeItem">
 
 const HEX32 = /^[0-9a-f]{32}$/i;
 
-export function validate(c: Credentials): Partial<Record<keyof Credentials, string>> {
+// Which fields the server fills when left blank (GET /api/defaults). Values never reach the page.
+export type Covered = Partial<Record<keyof Credentials, boolean>>;
+
+export function validate(c: Credentials, covered: Covered = {}): Partial<Record<keyof Credentials, string>> {
   const errors: Partial<Record<keyof Credentials, string>> = {};
-  for (const f of FIELDS) if (!f.optional && !c[f.key].trim()) errors[f.key] = "Required";
+  for (const f of FIELDS) if (!f.optional && !covered[f.key] && !c[f.key].trim()) errors[f.key] = "Required";
   for (const k of ["agoraAppId", "agoraCertificate"] as const) {
     if (c[k].trim() && !HEX32.test(c[k].trim())) errors[k] = "32 hex characters";
   }

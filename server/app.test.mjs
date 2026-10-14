@@ -3,7 +3,7 @@ import http from "node:http";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createApp } from "./app.mjs";
+import { createApp, applyDefaults } from "./app.mjs";
 import { UpstreamError } from "./upstream.mjs";
 
 const HEX = "0123456789abcdef0123456789abcdef";
@@ -161,5 +161,45 @@ describe("static and health", () => {
       expect(res.status, path).toBe(404);
       expect(res.body, path).not.toContain(SENTINEL);
     }
+  });
+});
+
+describe("server credential defaults", () => {
+  const OTHER = "fedcba9876543210fedcba9876543210";
+  const defaults = { agora: { appId: HEX, certificate: "c".repeat(32), pipelineId: "dpipe" }, vivix: { apiKey: "dvk" } };
+
+  it("fills blank fields and keeps typed ones", () => {
+    expect(applyDefaults({ agora: { appId: "", pipelineId: "mine" }, vivix: {} }, defaults)).toEqual({
+      agora: { appId: HEX, certificate: "c".repeat(32), pipelineId: "mine" }, vivix: { apiKey: "dvk" } });
+  });
+
+  it("never pairs a typed App ID with the default project's certificate or pipeline", () => {
+    const out = applyDefaults({ agora: { appId: OTHER }, vivix: { apiKey: "vk" } }, defaults);
+    expect(out.agora).toEqual({ appId: OTHER });
+    expect(out.vivix).toEqual({ apiKey: "vk" });
+  });
+
+  it("is a no-op without defaults", () => {
+    expect(applyDefaults({ agora: { appId: "" }, vivix: {} })).toEqual({ agora: { appId: "" }, vivix: {} });
+  });
+
+  it("starts and stops a session from an empty form", async () => {
+    deps.defaults = defaults;
+    expect((await post("/api/session", { agora: {}, vivix: {} })).status).toBe(200);
+    expect(calls).toContainEqual(["create", { apiKey: "dvk" }]);
+    expect(calls).toContainEqual(["join", { appId: HEX, certificate: "c".repeat(32), pipelineId: "dpipe" }]);
+    expect((await post("/api/session/stop", { agentId: "ag-1", vivixSessionId: "s-1" })).status).toBe(200);
+    expect(calls).toContainEqual(["close", { apiKey: "dvk", sessionId: "s-1" }]);
+  });
+
+  it("reports which fields are covered without revealing values", async () => {
+    deps.defaults = defaults;
+    const res = await fetch(base + "/api/defaults");
+    const text = await res.text();
+    expect(JSON.parse(text)).toEqual({ agoraAppId: true, agoraCertificate: true, pipelineId: true, vivixApiKey: true });
+    for (const secret of [HEX, "c".repeat(32), "dpipe", "dvk"]) expect(text).not.toContain(secret);
+    deps.defaults = {};
+    expect(await (await fetch(base + "/api/defaults")).json()).toEqual(
+      { agoraAppId: false, agoraCertificate: false, pipelineId: false, vivixApiKey: false });
   });
 });

@@ -40,6 +40,16 @@ HOST=100.x.y.z PUBLIC_HOST=myhost.example TLS_CERT=certs/cert.pem TLS_KEY=certs/
 
 The certificate is self-signed: accept the browser warning once on the other machine.
 
+### Server-side credential defaults
+
+Set any of `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE`, `AGORA_PIPELINE_ID`, `VIVIX_API_KEY` in
+the server's environment (e.g. `node --env-file=.env server/index.mjs`) and the page may leave
+those fields blank; the server fills them in. The values never reach the browser —
+`GET /api/defaults` only says which fields are covered. Agora defaults apply only when the App
+ID is blank or is the default one, so a typed App ID is never paired with another project's
+certificate. Anyone who can reach the server then spends those accounts, so keep it on
+localhost or a VPN.
+
 ## Credentials
 
 | Field | Where |

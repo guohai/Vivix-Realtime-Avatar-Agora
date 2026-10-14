@@ -51,9 +51,32 @@ async function settleAll(tasks) {
   if (failures.length > 1) throw new UpstreamFailures(failures.map(e => String(e?.message ?? e)));
 }
 
+const blank = v => typeof v !== "string" || !v.trim();
+
+// Server-side credential defaults fill fields the page left blank. The values never leave the
+// server; the page only learns which fields are covered. Agora defaults belong to one project,
+// so they apply only when the App ID is blank or is the default one — a typed App ID is never
+// paired with another project's certificate or pipeline.
+export function applyDefaults(body, defaults = {}) {
+  const out = { ...body, agora: { ...body?.agora }, vivix: { ...body?.vivix } };
+  const a = defaults.agora ?? {}, v = defaults.vivix ?? {};
+  if (a.appId && (blank(out.agora.appId) || out.agora.appId.trim() === a.appId)) {
+    for (const k of ["appId", "certificate", "pipelineId"]) if (blank(out.agora[k]) && a[k]) out.agora[k] = a[k];
+  }
+  if (blank(out.vivix.apiKey) && v.apiKey) out.vivix.apiKey = v.apiKey;
+  return out;
+}
+
 export function createApp(deps) {
-  const { createSession, closeSession, joinAgent, leaveAgent, interruptAgent, staticDir } = deps;
+  const { createSession, closeSession, joinAgent, leaveAgent, interruptAgent, staticDir, defaults = {} } = deps;
   const root = normalize(staticDir + sep);
+  const a = defaults.agora ?? {};
+  const covered = {
+    agoraAppId: !!a.appId,
+    agoraCertificate: !!(a.appId && a.certificate),
+    pipelineId: !!(a.appId && a.pipelineId),
+    vivixApiKey: !!defaults.vivix?.apiKey,
+  };
 
   async function startSession(body) {
     const { agora, vivix } = sessionRequest(body);
@@ -117,8 +140,9 @@ export function createApp(deps) {
   return async (req, res) => {
     try {
       const route = routes[`${req.method} ${req.url}`];
-      if (route) return send(res, 200, await route(await readBody(req)));
+      if (route) return send(res, 200, await route(applyDefaults(await readBody(req), defaults)));
       if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true });
+      if (req.method === "GET" && req.url === "/api/defaults") return send(res, 200, covered);
       if (req.method === "GET") return await serveStatic(req, res);
       send(res, 404, { error: "Not found" });
     } catch (e) {
