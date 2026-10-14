@@ -4,11 +4,12 @@ A direct build of <https://docs.vivix.ai/streaming-avatar/integrate/agora>.
 `server.mjs`, `index.html` and `main.js` are the doc's code blocks verbatim; `session.json`
 is the Quickstart body plus `delivery.media.transport: "agora"` and the FAQ's `auto_close`.
 
-Only deviation: `server.mjs` listens on `PORT` if set (the doc hardcodes 3000, which is
+Runs on the default Node 20.17 here (the doc asks for 22; nothing used needs it).
+
+Only code deviation: `server.mjs` listens on `PORT` if set (the doc hardcodes 3000, which is
 taken on this machine).
 
 ```bash
-nvm use 22
 npm install
 npx esbuild main.js --bundle --outfile=app.js
 export VIVIX_API_KEY="YOUR_API_KEY"
