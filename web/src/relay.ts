@@ -13,11 +13,15 @@ export async function startRelay(agentTrack: IRemoteAudioTrack, target: IAgoraRT
   sink.srcObject = new MediaStream([source]);
   sink.play().catch(() => {});
 
-  const track = AgoraRTC.createCustomAudioTrack({ mediaStreamTrack: source });
+  // LocalTrack.close() stops its MediaStreamTrack, so publish a clone: closing the relay must
+  // never end the agent's remote track (it is relayed again if the agent republishes).
+  const clone = source.clone();
+  const track = AgoraRTC.createCustomAudioTrack({ mediaStreamTrack: clone });
   try {
     await target.publish(track);
   } catch (e) {
     track.close();
+    clone.stop();
     sink.srcObject = null;
     throw e;
   }
@@ -25,6 +29,7 @@ export async function startRelay(agentTrack: IRemoteAudioTrack, target: IAgoraRT
     async close() {
       try { await target.unpublish(track); } catch { /* channel already left */ }
       track.close();
+      clone.stop();
       sink.srcObject = null;
     },
   };

@@ -35,7 +35,11 @@ function openControl(control: VivixSession["control"], lost: () => void): { ws: 
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export async function joinAvatar(s: VivixSession, videoEl: HTMLElement, h: AvatarHandlers): Promise<AvatarLink> {
+// `onJoined` fires as soon as the channel-B RTC join completes (publishing needs only that);
+// the returned promise additionally waits for the control socket and rejects if it fails.
+export async function joinAvatar(
+  s: VivixSession, videoEl: HTMLElement, h: AvatarHandlers, onJoined?: (client: IAgoraRTCClient) => void,
+): Promise<AvatarLink> {
   const m = s.media;
   const client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
   AgoraRTC.onAutoplayFailed = () => h.autoplayBlocked();
@@ -62,7 +66,7 @@ export async function joinAvatar(s: VivixSession, videoEl: HTMLElement, h: Avata
   const { ws, ready } = openControl(s.control, () => { if (!closing) h.controlLost(); });
   const [control, joined] = await Promise.allSettled([
     ready,
-    client.join(m.appId, m.channel, m.token || null, asUid(m.uid)),
+    client.join(m.appId, m.channel, m.token || null, asUid(m.uid)).then(r => { onJoined?.(client); return r; }),
   ]);
   if (control.status === "rejected" || joined.status === "rejected") {
     closing = true;

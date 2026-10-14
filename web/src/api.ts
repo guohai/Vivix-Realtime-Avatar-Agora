@@ -12,15 +12,15 @@ export class ApiError extends Error {
   constructor(message: string, readonly field?: string) { super(message); }
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+async function post<T>(path: string, body: unknown, keepalive = false): Promise<T> {
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(data.error || `HTTP ${res.status}`, data.field);
   return data as T;
 }
 
 export const startSession = (body: SessionBody) => post<StartResponse>("/api/session", body);
-export const stopSession = (body: StopBody) => post<void>("/api/session/stop", body);
+export const stopSession = (body: StopBody) => post<void>("/api/session/stop", body, true); // keepalive: survives the tab closing mid-Stop
 export const interruptAgent = (body: InterruptBody) => post<void>("/api/session/interrupt", body);
 
 // For pagehide: survives the page going away. text/plain keeps it a simple request.

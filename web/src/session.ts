@@ -51,7 +51,10 @@ export class Session {
 
   async start(): Promise<void> {
     try { await this.run(); }
-    catch (e) {
+    catch (err) {
+      // Once Stop has been pressed any failure (e.g. the POST or publish dying because of the
+      // teardown) is just the cancellation, and must not be reported as a start failure.
+      const e = this.stopping && !(err instanceof CancelledError) ? new CancelledError() : err;
       if (e instanceof CancelledError) {
         // stop() ran while we were starting: tear down whatever got created since, and close
         // upstream with IDs that only arrived after stop() had none.
@@ -77,13 +80,16 @@ export class Session {
     this.ev.mark("ConvoAI agent started", s.timings.convoJoinMs);
     this.mark("Sessions ready");
 
+    // Channel B's RTC join is all publishing needs; avatarJoin also waits for the control socket.
+    let rtcJoined!: (c: IAgoraRTCClient) => void;
+    const clientB = new Promise<IAgoraRTCClient>(resolve => { rtcJoined = resolve; });
     const avatarJoin = joinAvatar(s.vivix, this.videoEl, {
       firstFrame: () => { this.mark("Avatar first frame"); this.ev.status("Live — speak to the avatar."); },
       audio: track => { this.avatarAudio = track; },
       autoplayBlocked: () => this.ev.autoplayBlocked(),
       controlLost: () => { if (!this.stopping) this.ev.ended("Vivix control connection closed."); },
       error: m => this.ev.status(m),
-    }).then(a => { this.avatar = a; this.mark("Joined Vivix channel"); return a; });
+    }, rtcJoined).then(a => { this.avatar = a; this.mark("Joined Vivix channel"); return a; });
 
     const convoJoin =
       joinConvo(s.convo, {
@@ -91,16 +97,16 @@ export class Session {
         agentLeft: () => { if (!this.stopping) this.ev.ended("The agent left the channel (idle timeout or error)."); },
         agentAudio: track => {
           this.agentAudio = track;
-          // Relay once channel B is joined; chained so a republish replaces the old relay in order.
+          // Relay once channel B's RTC join completes; chained so a republish replaces the old relay in order.
           this.relayChain = this.relayChain.then(async () => {
-            const link = await avatarJoin;
+            const client = await clientB;
             if (this.stopping) return;
             await this.relay?.close();
-            const relay = await startRelay(track, link.client);
+            const relay = await startRelay(track, client);
             if (this.stopping) { await relay.close().catch(() => {}); return; }
             this.relay = relay;
             this.mark("Agent audio relayed");
-          }).catch(e => this.ev.status(`Relay failed: ${e.message}`));
+          }).catch(e => { if (!this.stopping) this.ev.status(`Relay failed: ${e.message}`); });
         },
         message: msg => { this.lines = applyMessage(this.lines, msg); this.ev.transcript(this.lines); },
         error: m => this.ev.status(m),

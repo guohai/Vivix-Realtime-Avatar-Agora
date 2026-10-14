@@ -10,6 +10,7 @@ const remember = $<HTMLInputElement>("#remember");
 const startBtn = $<HTMLButtonElement>("#start"), stopBtn = $<HTMLButtonElement>("#stop");
 const muteBtn = $<HTMLButtonElement>("#mute"), interruptBtn = $<HTMLButtonElement>("#interrupt");
 const soundBtn = $<HTMLButtonElement>("#sound"), status = $("#status");
+const setup = $("#setup"), credsToggle = $<HTMLButtonElement>("#creds-toggle");
 const transcript = $("#transcript"), timeline = $("#timeline"), latency = $("#latency");
 
 const { creds: initial, remembered } = loadCredentials(localStorage);
@@ -48,6 +49,11 @@ function setRunning(running: boolean) {
   stopBtn.disabled = !running;
   muteBtn.disabled = interruptBtn.disabled = !running;
   for (const el of Object.values(inputs)) el.disabled = running;
+  // Collapsed while running (inputs stay disabled); a toggle reveals them read-only.
+  setup.classList.toggle("running", running);
+  setup.classList.remove("creds-open");
+  credsToggle.hidden = !running;
+  credsToggle.textContent = "Show credentials";
 }
 
 function renderTranscript(lines: Line[]) {
@@ -66,8 +72,11 @@ async function stop(reason?: string) {
   session = undefined;
   stopBtn.disabled = true;
   status.textContent = "Stopping…";
-  try { await s.stop(); status.textContent = reason ?? "Stopped."; }
-  catch (e) { status.textContent = `Stopped locally; upstream close failed: ${(e as Error).message}`; }
+  let outcome: string;
+  try { await s.stop(); outcome = reason ?? "Stopped."; }
+  catch (e) { outcome = `Stopped locally; upstream close failed: ${(e as Error).message}`; }
+  if (session) return; // a newer session already owns the UI
+  status.textContent = outcome;
   setRunning(false);
   soundBtn.hidden = true;
 }
@@ -84,29 +93,39 @@ startBtn.onclick = async () => {
   latency.textContent = "Relay + render: —";
   muted = false; muteBtn.textContent = "Mute mic";
   setRunning(true);
-  session = new Session(creds, $("#video"), {
-    status: t => { status.textContent = t; },
+  // Late callbacks from a superseded session must not touch the shared UI (a stopped one may still report).
+  const mine = () => session === s || session === undefined;
+  const s: Session = new Session(creds, $("#video"), {
+    status: t => { if (mine()) status.textContent = t; },
     mark: (label, ms) => {
+      if (!mine()) return;
       const dt = document.createElement("dt"), dd = document.createElement("dd");
       dt.textContent = label; dd.textContent = `${ms} ms`;
       timeline.append(dt, dd);
     },
     latency: ms => {
+      if (!mine()) return;
       latencies.push(ms);
       const avg = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
       latency.textContent = `Relay + render: last ${ms} ms · avg ${avg} ms (${latencies.length} turns)`;
     },
-    transcript: renderTranscript,
-    autoplayBlocked: () => { soundBtn.hidden = false; },
-    ended: reason => void stop(reason),
+    transcript: lines => { if (mine()) renderTranscript(lines); },
+    autoplayBlocked: () => { if (mine()) soundBtn.hidden = false; },
+    ended: reason => { if (session === s) void stop(reason); },
   });
-  try { await session.start(); }
+  session = s;
+  try { await s.start(); }
   catch (e) {
-    if (e instanceof CancelledError) return; // Stop was pressed; stop() reports the outcome
+    if (e instanceof CancelledError || session !== s) return; // Stop was pressed (or a newer session owns the UI)
     const err = e as ApiError;
     if (err.field && SERVER_FIELD[err.field]) showErrors({ [SERVER_FIELD[err.field]]: err.message });
     await stop(`Start failed: ${err.message}`);
   }
+};
+
+credsToggle.onclick = () => {
+  const open = setup.classList.toggle("creds-open");
+  credsToggle.textContent = open ? "Hide credentials" : "Show credentials";
 };
 
 stopBtn.onclick = () => void stop();
