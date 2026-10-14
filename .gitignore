@@ -4,3 +4,4 @@ web/dist/
 claude_logs/
 app.js
 .superpowers/
+test-results/

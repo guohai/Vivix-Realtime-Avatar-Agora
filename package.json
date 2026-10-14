@@ -1,0 +1,23 @@
+{
+  "name": "vivix-convoai-demo",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20.6" },
+  "scripts": {
+    "dev:web": "vite web",
+    "build": "tsc -p web && vite build web",
+    "start": "node server/index.mjs",
+    "test": "vitest run",
+    "e2e": "node e2e/smoke.mjs"
+  },
+  "dependencies": {
+    "agora-token": "^2.0.7"
+  },
+  "devDependencies": {
+    "agora-rtc-sdk-ng": "^4.24.9",
+    "playwright-core": "^1.57.0",
+    "typescript": "~5.9.3",
+    "vite": "^6.4.4",
+    "vitest": "^3.2.7"
+  }
+}
