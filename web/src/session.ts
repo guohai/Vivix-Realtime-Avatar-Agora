@@ -18,6 +18,10 @@ export interface SessionEvents {
   ended(reason: string): void;
 }
 
+export class CancelledError extends Error {
+  constructor() { super("Cancelled"); this.name = "CancelledError"; }
+}
+
 AgoraRTC.setLogLevel(3); // warnings and errors only
 
 export class Session {
@@ -25,7 +29,6 @@ export class Session {
   private convo?: IAgoraRTCClient;
   private avatar?: AvatarLink;
   private mic?: IMicrophoneAudioTrack;
-  private micPending?: Promise<IMicrophoneAudioTrack>;
   private relay?: Relay;
   private relayChain: Promise<void> = Promise.resolve();
   private agentAudio?: IRemoteAudioTrack;
@@ -35,6 +38,8 @@ export class Session {
   private timeline = new Timeline();
   private onset = new OnsetTracker();
   private stopping = false;
+  private stopSent = false;
+  private wantMuted = false;
 
   constructor(private creds: Credentials, private videoEl: HTMLElement, private ev: SessionEvents) {}
 
@@ -42,14 +47,32 @@ export class Session {
 
   private mark(label: string) { this.ev.mark(label, this.timeline.mark(label)); }
 
+  private check() { if (this.stopping) throw new CancelledError(); }
+
   async start(): Promise<void> {
+    try { await this.run(); }
+    catch (e) {
+      if (e instanceof CancelledError) {
+        // stop() ran while we were starting: tear down whatever got created since, and close
+        // upstream with IDs that only arrived after stop() had none.
+        const body = this.stopSent ? null : this.stopBody();
+        if (body) this.stopSent = true;
+        const [, up] = await Promise.allSettled([this.teardownLocal(), body ? stopSession(body) : undefined]);
+        if (up.status === "rejected") this.ev.status(`Upstream close failed: ${(up.reason as Error).message}`);
+      }
+      throw e;
+    }
+  }
+
+  private async run(): Promise<void> {
     this.timeline.reset();
     this.ev.status("Starting…");
     const micReady = AgoraRTC.createMicrophoneAudioTrack({ AEC: true, ANS: true, AGC: true });
-    micReady.catch(() => {}); // surfaced below; avoid an unhandled rejection if the session fails first
-    this.micPending = micReady; // stop() closes it even when start fails part-way
+    // A mic granted after Stop is closed the moment it arrives; never awaited by stop().
+    micReady.then(t => { if (this.stopping) t.close(); }, () => {});
     const s = await startSession(toSessionBody(this.creds));
     this.started = s;
+    this.check();
     this.ev.mark("Vivix session created", s.timings.vivixCreateMs);
     this.ev.mark("ConvoAI agent started", s.timings.convoJoinMs);
     this.mark("Sessions ready");
@@ -71,8 +94,11 @@ export class Session {
           // Relay once channel B is joined; chained so a republish replaces the old relay in order.
           this.relayChain = this.relayChain.then(async () => {
             const link = await avatarJoin;
+            if (this.stopping) return;
             await this.relay?.close();
-            this.relay = await startRelay(track, link.client);
+            const relay = await startRelay(track, link.client);
+            if (this.stopping) { await relay.close().catch(() => {}); return; }
+            this.relay = relay;
             this.mark("Agent audio relayed");
           }).catch(e => this.ev.status(`Relay failed: ${e.message}`));
         },
@@ -81,11 +107,18 @@ export class Session {
       }).then(c => { this.convo = c; this.mark("Joined ConvoAI channel"); return c; });
     let convo: IAgoraRTCClient;
     try { [convo] = await Promise.all([convoJoin, avatarJoin]); }
-    catch (e) { await Promise.allSettled([convoJoin, avatarJoin]); throw e; } // so stop() can close whichever joined
+    catch (e) { await Promise.allSettled([convoJoin, avatarJoin]); throw e; } // so teardown can close whichever joined
+    this.check();
 
-    try { this.mic = await micReady; }
-    catch (e) { throw new Error(`Microphone unavailable: ${(e as Error).message}`); }
-    await convo.publish(this.mic);
+    let mic: IMicrophoneAudioTrack;
+    try { mic = await micReady; }
+    catch (e) { this.check(); throw new Error(`Microphone unavailable: ${(e as Error).message}`); }
+    this.mic = mic;
+    if (this.stopping) { mic.close(); throw new CancelledError(); }
+    if (this.wantMuted) await mic.setMuted(true);
+    this.check();
+    await convo.publish(mic);
+    this.check();
     this.mark("Mic live");
 
     this.sampler = window.setInterval(() => {
@@ -104,22 +137,34 @@ export class Session {
     };
   }
 
+  // Idempotent, safe from any point: each resource is taken (cleared) before it is closed.
+  private async teardownLocal(): Promise<void> {
+    window.clearInterval(this.sampler);
+    this.sampler = undefined;
+    const relay = this.relay, mic = this.mic, convo = this.convo, avatar = this.avatar;
+    this.relay = this.mic = this.convo = this.avatar = undefined;
+    const attempt = async (f: () => unknown) => { try { await f(); } catch { /* best effort */ } };
+    await Promise.all([
+      attempt(() => relay?.close()),
+      attempt(() => mic?.close()),
+      attempt(() => convo?.leave()),
+      attempt(() => avatar?.close()),
+    ]);
+    convo?.removeAllListeners();
+  }
+
   async stop(): Promise<void> {
     this.stopping = true;
-    window.clearInterval(this.sampler);
-    await this.relayChain;
-    await Promise.allSettled([this.relay?.close()]);
-    try { (this.mic ?? (await this.micPending?.catch(() => undefined)))?.close(); } catch { /* keep going to stopSession */ }
-    await Promise.allSettled([this.convo?.leave(), this.avatar?.close()]);
-    this.convo?.removeAllListeners();
-    const body = this.stopBody();
-    if (body) await stopSession(body);
-    this.started = undefined;
+    const body = this.stopSent ? null : this.stopBody();
+    if (body) this.stopSent = true;
+    // Upstream close never waits on local teardown.
+    const [, up] = await Promise.allSettled([this.teardownLocal(), body ? stopSession(body) : undefined]);
+    if (up.status === "rejected") throw up.reason;
   }
 
   stopOnUnload(): void {
     const body = this.stopBody();
-    if (body && !this.stopping) { this.stopping = true; beaconStop(body); }
+    if (body && !this.stopping) { this.stopping = true; this.stopSent = true; beaconStop(body); }
   }
 
   async interrupt(): Promise<void> {
@@ -130,7 +175,7 @@ export class Session {
     });
   }
 
-  async setMuted(muted: boolean): Promise<void> { await this.mic?.setMuted(muted); }
+  async setMuted(muted: boolean): Promise<void> { this.wantMuted = muted; await this.mic?.setMuted(muted); }
 
   resumeAudio(): void { this.avatarAudio?.play(); }
 }

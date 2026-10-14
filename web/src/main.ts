@@ -1,7 +1,7 @@
 import "./style.css";
 import { FIELDS, SERVER_FIELD, loadCredentials, saveCredentials, validate, type Credentials } from "./config";
 import { ApiError } from "./api";
-import { Session } from "./session";
+import { Session, CancelledError } from "./session";
 import type { Line } from "./transcript";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -102,6 +102,7 @@ startBtn.onclick = async () => {
   });
   try { await session.start(); }
   catch (e) {
+    if (e instanceof CancelledError) return; // Stop was pressed; stop() reports the outcome
     const err = e as ApiError;
     if (err.field && SERVER_FIELD[err.field]) showErrors({ [SERVER_FIELD[err.field]]: err.message });
     await stop(`Start failed: ${err.message}`);
