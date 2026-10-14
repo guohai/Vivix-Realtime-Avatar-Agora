@@ -3,3 +3,4 @@ web/dist/
 .env
 claude_logs/
 app.js
+.superpowers/
