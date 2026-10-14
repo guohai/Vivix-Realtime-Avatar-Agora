@@ -45,16 +45,37 @@ only in the page.
 ## Latency
 
 The side panel shows the startup timeline and, per turn, the time from the agent's voice
-becoming audible to the avatar's: measured 2.2–2.9 s, almost all of it inside Vivix's
-passthrough renderer (the relay itself is ready ~40 ms after the agent's audio arrives).
+becoming audible to the avatar's.
+
+- Spike (`02-convoai-spike`): agent→avatar onset of 2.25, 2.55 and 2.85 s (n=3).
+- This app's smoke run: 3.15 s (n=1).
+
+Almost all of it is inside Vivix's passthrough renderer. In the spike the relay itself was
+ready ~40 ms after the agent's audio arrived (agent audio subscribed at +4.02 s, relay
+published at +4.06 s).
 
 ## Test
 
 ```bash
 npm test                  # unit tests
-npm run build && npm start &
-E2E_WAV=speech.wav node --env-file=.env e2e/smoke.mjs   # real services, headless Chrome
+npm run build
+npm start                 # in a separate terminal (or: node server/index.mjs & SRV=$!  ...  kill $SRV)
 ```
+
+Then run the smoke against real services in headless Chrome (creates billed sessions):
+
+```bash
+E2E_WAV=speech.wav node --env-file=.env e2e/smoke.mjs      # or: npm run e2e
+```
+
+`--env-file` may be given more than once to load several files. Required env vars:
+`AGORA_APP_ID`, `AGORA_APP_CERTIFICATE`, `AGORA_PIPELINE_ID`, `VIVIX_API_KEY`. Optional:
+`E2E_WAV` (speech WAV for the fake mic), `E2E_URL` (default http://localhost:8787),
+`CHROME_PATH` (default /usr/bin/google-chrome), `E2E_SECONDS` (default 35).
+
+The smoke fails unless the avatar's first frame, a relayed agent reply and an `agent:`
+transcript line all appear. It saves `test-results/smoke.png`, which shows the App ID and
+pipeline ID, so do not share it.
 
 ## Cleanup and cost
 

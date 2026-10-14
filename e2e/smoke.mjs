@@ -16,7 +16,12 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 let failed = false;
 try {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["microphone"] })).newPage();
-  page.on("console", m => { if (m.type() === "error" && !/favicon/.test(m.text())) console.log("[console]", m.text().slice(0, 200)); });
+  page.on("console", m => {
+    if (m.type() !== "error") return;
+    const u = m.location()?.url || "";
+    if (/favicon/.test(u)) return;
+    console.log("[console]", m.text().slice(0, 200), u ? `(${u})` : "");
+  });
   await page.goto(url);
   for (const [k, v] of Object.entries(creds)) await page.fill(`[data-field="${k}"] input`, v);
   await page.click("#start");
@@ -28,6 +33,8 @@ try {
     latency: document.querySelector("#latency").textContent,
     transcript: [...document.querySelectorAll("#transcript li")].map(li => `${li.className.split(" ")[0]}: ${li.textContent}`),
   }));
+  if (!report.timeline.some(l => l.startsWith("Agent audio relayed"))) throw new Error("no 'Agent audio relayed' timeline entry");
+  if (!report.transcript.some(l => l.startsWith("agent:"))) throw new Error("no agent transcript line");
   console.log(report.timeline.join("\n"));
   console.log(report.latency);
   console.log(report.transcript.slice(0, 6).join("\n"));
