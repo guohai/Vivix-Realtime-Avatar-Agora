@@ -69,7 +69,7 @@ export class Session {
     this.ev.status("Starting…");
     const micReady = AgoraRTC.createMicrophoneAudioTrack({ AEC: true, ANS: true, AGC: true });
     // A mic granted after Stop is closed the moment it arrives; never awaited by stop().
-    micReady.then(t => { if (this.stopping) t.close(); }, () => {});
+    micReady.then(t => { this.mic = t; if (this.stopping) t.close(); }, () => {});
     const s = await startSession(toSessionBody(this.creds));
     this.started = s;
     this.check();
@@ -159,7 +159,7 @@ export class Session {
     if (body) this.stopSent = true;
     // Upstream close never waits on local teardown.
     const [, up] = await Promise.allSettled([this.teardownLocal(), body ? stopSession(body) : undefined]);
-    if (up.status === "rejected") throw up.reason;
+    if (up.status === "rejected") { this.stopSent = false; throw up.reason; } // allow a retry
   }
 
   stopOnUnload(): void {
