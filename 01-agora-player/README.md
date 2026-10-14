@@ -16,5 +16,7 @@ export VIVIX_API_KEY="YOUR_API_KEY"
 PORT=3200 node server.mjs        # then open http://localhost:3200 and click Start
 ```
 
-This is a viewer: it plays the avatar's video and audio and never opens the microphone.
+Plus the Agora microphone step from <https://docs.vivix.ai/streaming-avatar/interaction/conversation>
+("Microphone on/off" buttons, code verbatim; Stop calls `stopMicrophone()` before leaving).
+Vivix runs ASR → LLM → TTS itself; measured speech end → avatar speaking ≈ 2.1–2.5 s.
 Stop calls Vivix close; closing the tab leaves the session to `auto_close` (60 s).
