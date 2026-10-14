@@ -25,6 +25,21 @@ npm start                 # http://localhost:8787
 Development with hot reload: `npm start` in one terminal, `npm run dev:web` in another
 (http://localhost:5180, proxies `/api` to 8787).
 
+### From another machine
+
+Browsers only open the microphone over HTTPS (or on localhost), so serve it over TLS and
+bind to an address the other machine can reach — ideally a VPN interface, since the API has
+no authentication:
+
+```bash
+mkdir -p certs            # git-ignored
+openssl req -x509 -newkey rsa:2048 -nodes -days 365 -subj "/CN=myhost.example" \
+  -addext "subjectAltName=DNS:myhost.example,IP:100.x.y.z" -keyout certs/key.pem -out certs/cert.pem
+HOST=100.x.y.z PUBLIC_HOST=myhost.example TLS_CERT=certs/cert.pem TLS_KEY=certs/key.pem npm start
+```
+
+The certificate is self-signed: accept the browser warning once on the other machine.
+
 ## Credentials
 
 | Field | Where |

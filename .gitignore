@@ -5,3 +5,4 @@ claude_logs/
 app.js
 .superpowers/
 test-results/
+certs/
