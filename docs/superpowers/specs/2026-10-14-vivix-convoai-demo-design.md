@@ -1,6 +1,6 @@
 # Vivix × Agora ConvoAI web demo — design
 
-Date: 2026-10-14 · Status: approved in chat, pending spec review
+Date: 2026-10-14 · Status: approved; updated after spike `02-convoai-spike`
 
 ## Goal
 
@@ -46,11 +46,11 @@ channel B (Vivix-provisioned, passthrough) ──► Vivix renders ──► ava
 
 Node 22, built-in `http` and `fetch`; only dependency `agora-token`. Stateless: every
 request carries the credentials it needs; nothing is written to disk. Binds `127.0.0.1`
-by default (`HOST` / `PORT` override). In production it also serves `web/dist`.
+by default, port 8787 (`HOST` / `PORT` override). In production it also serves `web/dist`.
 
 | Route | Body | Does |
 |---|---|---|
-| `POST /api/session` | `{ agora: {appId, certificate, pipelineId}, vivix: {apiKey, imageUrl?} }` | In parallel: Vivix create + ConvoAI join. Rolls back the side that succeeded if the other fails. Returns both credential sets, Vivix control URL/secret, and per-call timings (ms). |
+| `POST /api/session` | `{ agora: {appId, certificate, pipelineId, persona?}, vivix: {apiKey, imageUrl?} }` | In parallel: Vivix create + ConvoAI join. Rolls back the side that succeeded if the other fails. Returns both credential sets, Vivix control URL/secret, and per-call timings (ms). |
 | `POST /api/session/stop` | `{ agora, vivix, agentId, vivixSessionId }` | In parallel: ConvoAI `leave` (404 = ok) and Vivix `close` (`closing`/`closed` = ok). |
 | `POST /api/session/interrupt` | `{ agora, agentId }` | ConvoAI `interrupt`. |
 | `GET /health` | — | `{ ok: true }` |
@@ -77,12 +77,21 @@ Vivix create body:
   "avatars": [{ "avatar_id": "host", "persona": "<short neutral persona>",
     "visual": { "source_images": [{ "source_image_id": "portrait",
       "url": "<imageUrl or Quickstart default>", "media_type": "image/jpeg" }] } }],
-  "pipeline_config": { "a2a_config": { "enable_a2a": true, "provider": "passthrough" } },
+  "pipeline_config": {
+    "tts_config": { "tts_voice_id": "longanhuan_v3.6" },
+    "a2a_config": { "enable_a2a": true, "provider": "passthrough" }
+  },
   "delivery": { "media": { "transport": "agora" } },
   "max_duration_seconds": 1200,
   "auto_close": { "disconnected_timeout_seconds": 60 }
 }
 ```
+
+`tts_config` is required even in passthrough: without it Vivix returns HTTP 500 / code 50001
+(found in the spike). The voice is never heard.
+
+Optional `persona` (typed in the UI) is sent as ConvoAI `properties.llm.system_messages`, overriding
+the published agent's prompt for this session only; empty means the agent's own prompt is used.
 
 ## Web — `web/`
 
@@ -117,13 +126,16 @@ Vite + vanilla TypeScript, no framework.
 
 ## Testing
 
-- `node:test` with mocked `fetch`: ConvoAI join body (pipeline_id, uids, datastream),
+- Vitest (one runner for server `.mjs` and web `.ts`) with injected `fetch`: ConvoAI join body (pipeline_id, uids, datastream),
   Vivix create body (passthrough, agora transport), rollback on partial failure, stop
   tolerance (404 / `closing`), error scrubbing, transcript chunk reassembly.
-- Spike first, with real credentials (Agora from `spatius-scenario-demo/backend/.env`, read
+- Spike (done, `02-convoai-spike`): with real credentials (Agora from `spatius-scenario-demo/backend/.env`, read
   at runtime and never copied into this repo; Vivix key from the user): confirm the client can
-  publish audio with the Vivix-issued token in passthrough mode, and measure relay latency.
-- End-to-end manual run in Chrome with real credentials.
+  publish audio with the Vivix-issued token in passthrough mode — confirmed. Measured agent-audio
+  onset → avatar-audio onset 2.25–2.85 s, almost all inside Vivix (relay ready ~40 ms after the
+  agent track arrives); no API knob exists to reduce it.
+- End-to-end: `e2e/smoke.mjs` drives headless Chrome (Playwright, system Chrome, fake mic WAV)
+  through Start → avatar first frame → agent reply relayed → Stop.
 
 ## Out of scope (v1)
 
