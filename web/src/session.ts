@@ -6,7 +6,7 @@ import { toSessionBody, type Credentials } from "./config";
 import { joinConvo } from "./convo";
 import { joinAvatar, type AvatarLink } from "./avatar";
 import { startRelay, type Relay } from "./relay";
-import { applyMessage, type Line } from "./transcript";
+import { applyMessage, visibleLines, TurnRevealer, type Line } from "./transcript";
 import { Timeline, OnsetTracker, ResponseTimer } from "./metrics";
 
 export interface SessionEvents {
@@ -26,6 +26,8 @@ export class CancelledError extends Error {
 
 AgoraRTC.setLogLevel(3); // warnings and errors only
 
+const REVEAL_FALLBACK_MS = 8000;
+
 export class Session {
   private started?: StartResponse;
   private convo?: IAgoraRTCClient;
@@ -36,6 +38,10 @@ export class Session {
   private agentAudio?: IRemoteAudioTrack;
   private avatarAudio?: IRemoteAudioTrack;
   private lines: Line[] = [];
+  // Agent turns whose text may be shown: revealed when the avatar starts speaking, or after
+  // REVEAL_FALLBACK_MS if it never does (interrupted, or the avatar failed).
+  private revealer = new TurnRevealer();
+  private revealTimers = new Map<number, number>();
   private sampler?: number;
   private timeline = new Timeline();
   private onset = new OnsetTracker();
@@ -113,7 +119,12 @@ export class Session {
         },
         message: msg => {
           if (msg.object === "user.transcription" && msg.final === true) this.response.userFinal(performance.now());
-          this.lines = applyMessage(this.lines, msg); this.ev.transcript(this.lines);
+          this.lines = applyMessage(this.lines, msg);
+          const turn = msg.turn_id ?? -1;
+          if (msg.object === "assistant.transcription" && this.revealer.agentTurn(turn)) {
+            this.revealTimers.set(turn, window.setTimeout(() => this.reveal(turn), REVEAL_FALLBACK_MS));
+          }
+          this.showTranscript();
         },
         error: m => this.ev.status(m),
       }).then(c => { this.convo = c; this.mark("Joined ConvoAI channel"); return c; });
@@ -137,8 +148,22 @@ export class Session {
       const now = performance.now();
       this.response.voice(this.mic?.getVolumeLevel() ?? 0, now);
       const ms = this.onset.sample(this.agentAudio?.getVolumeLevel() ?? 0, this.avatarAudio?.getVolumeLevel() ?? 0, now);
-      if (ms !== null) this.ev.latency(ms, this.response.agentOnset(now - ms));
+      if (ms !== null) {
+        this.ev.latency(ms, this.response.agentOnset(now - ms));
+        // The avatar just started speaking: its text may show now.
+        this.revealer.avatarStarted();
+        this.showTranscript();
+      }
     }, 50);
+  }
+
+  private reveal(turn: number) {
+    this.revealer.force(turn);
+    this.showTranscript();
+  }
+
+  private showTranscript() {
+    if (!this.stopping) this.ev.transcript(visibleLines(this.lines, this.revealer.revealed));
   }
 
   private stopBody(): StopBody | null {
@@ -155,6 +180,8 @@ export class Session {
   private async teardownLocal(): Promise<void> {
     window.clearInterval(this.sampler);
     this.sampler = undefined;
+    for (const t of this.revealTimers.values()) window.clearTimeout(t);
+    this.revealTimers.clear();
     const relay = this.relay, mic = this.mic, convo = this.convo, avatar = this.avatar;
     this.relay = this.mic = this.convo = this.avatar = undefined;
     const attempt = async (f: () => unknown) => { try { await f(); } catch { /* best effort */ } };

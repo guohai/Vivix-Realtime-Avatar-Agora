@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createAssembler, applyMessage, type Line } from "./transcript";
+import { createAssembler, applyMessage, visibleLines, TurnRevealer, type Line } from "./transcript";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const b64 = (obj: unknown) => {
@@ -48,5 +48,57 @@ describe("applyMessage", () => {
     expect(lines[0].final).toBe(true);
     lines = applyMessage(lines, { object: "message.metrics", text: "x" });
     expect(lines).toHaveLength(1);
+  });
+});
+
+describe("visibleLines", () => {
+  it("hides agent turns until they are revealed, keeps user lines", () => {
+    const lines: Line[] = [
+      { role: "agent", turnId: 0, text: "Hi", final: true },
+      { role: "user", turnId: 1, text: "How are you", final: true },
+      { role: "agent", turnId: 1, text: "Fine", final: false },
+    ];
+    expect(visibleLines(lines, new Set([0]))).toEqual([lines[0], lines[1]]);
+    expect(visibleLines(lines, new Set([0, 1]))).toEqual(lines);
+  });
+});
+
+describe("TurnRevealer", () => {
+  it("reveals a turn when the avatar starts speaking", () => {
+    const r = new TurnRevealer();
+    r.agentTurn(1);
+    expect(r.revealed.has(1)).toBe(false);
+    r.avatarStarted();
+    expect(r.revealed.has(1)).toBe(true);
+  });
+
+  it("reveals at once text that arrives after the avatar already started", () => {
+    const r = new TurnRevealer();
+    r.avatarStarted();
+    r.agentTurn(2);
+    expect(r.revealed.has(2)).toBe(true);
+    r.agentTurn(3);                     // the head start is used up
+    expect(r.revealed.has(3)).toBe(false);
+  });
+
+  it("does not bank more than one head start", () => {
+    const r = new TurnRevealer();
+    r.avatarStarted(); r.avatarStarted();
+    r.agentTurn(1); r.agentTurn(2);
+    expect([r.revealed.has(1), r.revealed.has(2)]).toEqual([true, false]);
+  });
+
+  it("force-reveals a turn the avatar never spoke and keeps order for the rest", () => {
+    const r = new TurnRevealer();
+    r.agentTurn(1); r.agentTurn(2);
+    r.force(1);
+    r.avatarStarted();
+    expect([r.revealed.has(1), r.revealed.has(2)]).toEqual([true, true]);
+  });
+
+  it("reports whether a turn is new", () => {
+    const r = new TurnRevealer();
+    expect(r.agentTurn(1)).toBe(true);
+    expect(r.agentTurn(1)).toBe(false);
   });
 });

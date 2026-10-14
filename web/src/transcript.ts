@@ -35,3 +35,37 @@ export function applyMessage(lines: Line[], msg: ConvoMessage): Line[] {
   if (at === -1) return [...lines, line];
   return lines.map((l, i) => (i === at ? line : l));
 }
+
+// The agent's text arrives as the LLM writes it, ~2–3 s before the avatar speaks it (TTS plus
+// Vivix rendering). Agent turns stay hidden until revealed, so the text follows the voice.
+export function visibleLines(lines: Line[], revealed: ReadonlySet<number>): Line[] {
+  return lines.filter(l => l.role === "user" || revealed.has(l.turnId));
+}
+
+// Decides when each agent turn's text may show. Turns are revealed in arrival order as the
+// avatar starts speaking; if the avatar starts before the text arrives, that one head start
+// reveals the next turn at once. force() covers turns the avatar never speaks.
+export class TurnRevealer {
+  readonly revealed = new Set<number>();
+  private pending: number[] = [];
+  private headStart = false;
+
+  /** Returns true the first time a turn is seen. */
+  agentTurn(id: number): boolean {
+    if (this.revealed.has(id) || this.pending.includes(id)) return false;
+    if (this.headStart) { this.headStart = false; this.revealed.add(id); }
+    else this.pending.push(id);
+    return true;
+  }
+
+  avatarStarted(): void {
+    const id = this.pending.shift();
+    if (id === undefined) this.headStart = true;
+    else this.revealed.add(id);
+  }
+
+  force(id: number): void {
+    this.pending = this.pending.filter(p => p !== id);
+    this.revealed.add(id);
+  }
+}
