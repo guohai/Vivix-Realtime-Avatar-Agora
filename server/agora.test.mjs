@@ -65,6 +65,17 @@ describe("joinAgent", () => {
     await expect(joinAgent({ ...creds, pipelineId: "nope" }, f)).rejects.toThrow("ConvoAI: properties: tts.addon not found for <redacted>");
   });
 
+  it("redacts derived tokens echoed by upstream", async () => {
+    let agentToken;
+    const f = async (url, init) => {
+      agentToken = JSON.parse(init.body).properties.token;
+      return new Response(JSON.stringify({ detail: `bad token ${agentToken} / ${init.headers.Authorization}` }), { status: 400 });
+    };
+    const err = await joinAgent({ ...creds, pipelineId: "p" }, f).catch(e => e);
+    expect(err.message).toBe("ConvoAI: bad token <redacted> / agora token=\"<redacted>\"");
+    expect(err.message).not.toContain(agentToken);
+  });
+
   it("fails when no agent id comes back", async () => {
     await expect(joinAgent({ ...creds, pipelineId: "p" }, respond(200, {}))).rejects.toThrow("no agent id");
   });

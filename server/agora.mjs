@@ -15,7 +15,7 @@ const IDLE_TIMEOUT_SECONDS = 60;
 const rtcToken = ({ appId, certificate }, channel, uid, ttl = TOKEN_TTL_SECONDS) =>
   RtcTokenBuilder.buildTokenWithUid(appId, certificate, channel, uid, RtcRole.PUBLISHER, ttl, ttl);
 
-const restAuth = creds => `agora token="${rtcToken(creds, "", 1, REST_TOKEN_TTL_SECONDS)}"`;
+const restToken = creds => rtcToken(creds, "", 1, REST_TOKEN_TTL_SECONDS);
 
 export function mintIdentities(creds) {
   const channel = `vivix-${randomBytes(8).toString("hex")}`;
@@ -45,15 +45,19 @@ export function buildJoinBody({ pipelineId, persona }, ids) {
   return { name: ids.channel, pipeline_id: pipelineId, properties };
 }
 
-const call = (creds, path, body, fetchImpl, okStatuses) => postJson(`${CONVOAI_API}/projects/${creds.appId}/${path}`, {
-  service: "ConvoAI", headers: { Authorization: restAuth(creds) }, body,
-  secrets: [creds.certificate], fetchImpl, okStatuses,
-});
+// Upstream errors may echo anything we sent, so every derived token is redacted too.
+const call = (creds, path, body, fetchImpl, okStatuses, derivedSecrets = []) => {
+  const token = restToken(creds);
+  return postJson(`${CONVOAI_API}/projects/${creds.appId}/${path}`, {
+    service: "ConvoAI", headers: { Authorization: `agora token="${token}"` }, body,
+    secrets: [creds.certificate, token, ...derivedSecrets], fetchImpl, okStatuses,
+  });
+};
 
 export async function joinAgent({ appId, certificate, pipelineId, persona }, fetchImpl = fetch) {
   const creds = { appId, certificate };
   const ids = mintIdentities(creds);
-  const { data } = await call(creds, "join", buildJoinBody({ pipelineId, persona }, ids), fetchImpl);
+  const { data } = await call(creds, "join", buildJoinBody({ pipelineId, persona }, ids), fetchImpl, [], [ids.agentToken, ids.userToken]);
   if (typeof data?.agent_id !== "string" || !data.agent_id) throw new Error("ConvoAI: no agent id returned");
   return { agentId: data.agent_id, appId, channel: ids.channel, uid: ids.userUid, token: ids.userToken, agentUid: ids.agentUid };
 }

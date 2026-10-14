@@ -44,7 +44,11 @@ async function call(apiKey, path, body, fetchImpl) {
 export async function createSession({ apiKey, imageUrl }, fetchImpl = fetch) {
   const d = await call(apiKey, "realtime-avatar/sessions", buildCreateBody({ imageUrl }), fetchImpl);
   const m = d?.delivery?.media?.agora;
-  if (!d?.session_id || !d.control?.url || !m) throw new UpstreamError("Vivix", "session has no Agora media details", 502);
+  if (!d?.session_id || !d.control?.url || !m) {
+    // The session exists upstream but is unusable: close it so it is not left running.
+    if (d?.session_id) await closeSession({ apiKey, sessionId: d.session_id }, fetchImpl).catch(() => {});
+    throw new UpstreamError("Vivix", "session has no Agora media details", 502);
+  }
   return {
     sessionId: d.session_id,
     control: { url: d.control.url, clientSecret: d.control.client_secret },

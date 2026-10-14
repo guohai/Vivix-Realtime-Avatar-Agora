@@ -67,6 +67,21 @@ describe("createSession", () => {
     trtc.data.delivery.media = { transport: "trtc", trtc: {} };
     await expect(createSession({ apiKey: "vk" }, respond(200, trtc))).rejects.toThrow("no Agora media");
   });
+
+  it("closes a session that came back unusable (no control URL) before rejecting", async () => {
+    const bad = structuredClone(created);
+    delete bad.data.control;
+    const calls = [];
+    const f = async (url, init) => {
+      calls.push(url);
+      return new Response(JSON.stringify(url.endsWith("/close") ? { code: 0, data: { status: "closing" } } : bad), { status: 200 });
+    };
+    await expect(createSession({ apiKey: "vk" }, f)).rejects.toThrow("no Agora media");
+    expect(calls).toEqual([
+      "https://api.vivix.ai/v1/realtime-avatar/sessions",
+      "https://api.vivix.ai/v1/realtime-avatar/sessions/s-1/close",
+    ]);
+  });
 });
 
 describe("closeSession", () => {
