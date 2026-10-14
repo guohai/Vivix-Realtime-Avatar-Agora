@@ -14,7 +14,13 @@ export async function startRelay(agentTrack: IRemoteAudioTrack, target: IAgoraRT
   sink.play().catch(() => {});
 
   const track = AgoraRTC.createCustomAudioTrack({ mediaStreamTrack: source });
-  await target.publish(track);
+  try {
+    await target.publish(track);
+  } catch (e) {
+    track.close();
+    sink.srcObject = null;
+    throw e;
+  }
   return {
     async close() {
       try { await target.unpublish(track); } catch { /* channel already left */ }

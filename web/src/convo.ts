@@ -9,6 +9,7 @@ export interface ConvoHandlers {
   agentAudio(track: IRemoteAudioTrack): void;
   agentLeft(): void;
   message(msg: ConvoMessage): void;
+  error(message: string): void;
 }
 
 export async function joinConvo(s: ConvoSession, h: ConvoHandlers): Promise<IAgoraRTCClient> {
@@ -20,8 +21,12 @@ export async function joinConvo(s: ConvoSession, h: ConvoHandlers): Promise<IAgo
   client.on("user-left", u => { if (isAgent(u.uid)) h.agentLeft(); });
   client.on("user-published", async (user, type) => {
     if (!isAgent(user.uid) || type !== "audio") return;
-    await client.subscribe(user, "audio");
-    if (user.audioTrack) h.agentAudio(user.audioTrack);
+    try {
+      await client.subscribe(user, "audio");
+      if (user.audioTrack) h.agentAudio(user.audioTrack);
+    } catch (e) {
+      h.error(`Could not subscribe to the agent's audio: ${e instanceof Error ? e.message : String(e)}`);
+    }
   });
   client.on("stream-message", (uid, data) => {
     if (!isAgent(uid)) return;
