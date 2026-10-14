@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vivix × Agora ConvoAI</title>
+</head>
+<body>
+  <main class="app">
+    <section class="panel" id="setup">
+      <h1>Vivix × Agora ConvoAI</h1>
+      <form id="creds" autocomplete="off"></form>
+      <label class="remember"><input type="checkbox" id="remember"> Remember on this device</label>
+      <div class="controls">
+        <button id="start" class="primary">Start</button>
+        <button id="stop" disabled>Stop</button>
+        <button id="mute" disabled>Mute mic</button>
+        <button id="interrupt" disabled>Interrupt</button>
+      </div>
+      <p id="status" role="status">Enter credentials and press Start.</p>
+    </section>
+    <section class="stage">
+      <div id="video"></div>
+      <button id="sound" hidden>Enable sound</button>
+    </section>
+    <section class="panel side">
+      <h2>Transcript</h2>
+      <ol id="transcript"></ol>
+      <h2>Latency</h2>
+      <dl id="timeline"></dl>
+      <p id="latency" class="muted">Relay + render: —</p>
+    </section>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
