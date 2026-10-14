@@ -48,7 +48,7 @@ The side panel shows the startup timeline and, per turn, the time from the agent
 becoming audible to the avatar's.
 
 - Spike (`02-convoai-spike`): agent→avatar onset of 2.25, 2.55 and 2.85 s (n=3).
-- This app's smoke run: 3.15 s (n=1).
+- This app's smoke runs: 3.05 and 3.15 s (n=2).
 
 Almost all of it is inside Vivix's passthrough renderer. In the spike the relay itself was
 ready ~40 ms after the agent's audio arrived (agent audio subscribed at +4.02 s, relay

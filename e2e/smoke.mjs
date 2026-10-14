@@ -33,14 +33,14 @@ try {
     latency: document.querySelector("#latency").textContent,
     transcript: [...document.querySelectorAll("#transcript li")].map(li => `${li.className.split(" ")[0]}: ${li.textContent}`),
   }));
-  if (!report.timeline.some(l => l.startsWith("Agent audio relayed"))) throw new Error("no 'Agent audio relayed' timeline entry");
-  if (!report.transcript.some(l => l.startsWith("agent:"))) throw new Error("no agent transcript line");
   console.log(report.timeline.join("\n"));
   console.log(report.latency);
   console.log(report.transcript.slice(0, 6).join("\n"));
   await page.screenshot({ path: "test-results/smoke.png" }).catch(() => {});
+  if (!report.timeline.some(l => l.startsWith("Agent audio relayed"))) throw new Error("no 'Agent audio relayed' timeline entry");
+  if (!report.transcript.some(l => l.startsWith("agent:"))) throw new Error("no agent transcript line");
   await page.click("#stop");
-  await page.waitForFunction(() => /^Stopped/.test(document.querySelector("#status").textContent), null, { timeout: 15_000 });
+  await page.waitForFunction(() => /^Stopped\.$/.test(document.querySelector("#status").textContent), null, { timeout: 15_000 });
   console.log("status:", await page.textContent("#status"));
 } catch (e) {
   failed = true;

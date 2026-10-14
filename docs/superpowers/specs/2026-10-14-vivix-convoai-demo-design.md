@@ -40,11 +40,11 @@ channel B (Vivix-provisioned, passthrough) ──► Vivix renders ──► ava
 - Transcripts arrive over the RTC datastream (`parameters.data_channel = "datastream"`,
   `transcript.enable`) as `stream-message` events on channel A — no RTM SDK.
 - The Vivix control WebSocket is opened (keeps the session alive for `auto_close`) but
-  carries no conversation traffic in v1.
+  carries no traffic in v1.
 
 ## Backend — `server/`
 
-Node 22, built-in `http` and `fetch`; only dependency `agora-token`. Stateless: every
+Node >= 20.6 (runs on 20.17), built-in `http` and `fetch`; only dependency `agora-token`. Stateless: every
 request carries the credentials it needs; nothing is written to disk. Binds `127.0.0.1`
 by default, port 8787 (`HOST` / `PORT` override). In production it also serves `web/dist`.
 
@@ -64,9 +64,11 @@ Modules:
   `parameters: { data_channel: "datastream", enable_error_message: true }`, transcript
   enabled.
 - `vivix.mjs` — `create` (body below) and `close`; envelope check `code === 0`.
-- `index.mjs` — routing, JSON parsing with a size cap, input validation, error scrubbing
-  (upstream messages mentioning key/secret/token/authorization are replaced by a generic
-  `HTTP <status>` message, following the reference's `_safe_upstream_message`).
+- `app.mjs` — routing, JSON parsing with a size cap, input validation (`index.mjs` only
+  starts the listener).
+- `upstream.mjs` — value-based redaction: every submitted secret (API key, certificate) and
+  every derived secret (REST auth token, agent and user RTC tokens) is replaced by
+  `<redacted>` in upstream messages. This replaces the earlier keyword scrub.
 
 Vivix create body:
 
@@ -101,12 +103,14 @@ Vite + vanilla TypeScript, no framework.
   otherwise memory only.
 - `session.ts` — orchestration: on Start, request the mic **in parallel** with
   `POST /api/session`; then join channel A, join channel B and open the control WebSocket in
-  parallel; wire relay; Stop tears down in reverse and calls `/api/session/stop`; `pagehide`
+  parallel; the relay starts as soon as channel B's RTC join completes (it does not wait for the control
+  socket, though Start still fails if the socket fails); Stop tears down in reverse and calls `/api/session/stop`; `pagehide`
   sends the stop via `navigator.sendBeacon`.
 - `convo.ts` — channel A client (mic publish, agent audio subscribe, datastream).
 - `avatar.ts` — channel B client + control WebSocket (15 s open timeout).
 - `relay.ts` — agent `MediaStreamTrack` → custom audio track → publish on channel B;
-  re-relays if the agent republishes.
+  re-relays if the agent republishes (publishes a clone, so closing a relay never stops
+  the agent's remote track).
 - `transcript.ts` — reassembles chunked datastream messages
   (`<id>|<part>|<total>|<base64>`) and renders user/agent lines, partial then final.
 - `metrics.ts` — startup timeline (Vivix create, ConvoAI join, channel A join, channel B
@@ -126,9 +130,9 @@ Vite + vanilla TypeScript, no framework.
 
 ## Testing
 
-- Vitest (one runner for server `.mjs` and web `.ts`) with injected `fetch`: ConvoAI join body (pipeline_id, uids, datastream),
+- Vitest 4 (one runner for server `.mjs` and web `.ts`) with injected `fetch`: ConvoAI join body (pipeline_id, uids, datastream),
   Vivix create body (passthrough, agora transport), rollback on partial failure, stop
-  tolerance (404 / `closing`), error scrubbing, transcript chunk reassembly.
+  tolerance (404 / `closing`), value-based redaction, transcript chunk reassembly.
 - Spike (done, `02-convoai-spike`): with real credentials (Agora from `spatius-scenario-demo/backend/.env`, read
   at runtime and never copied into this repo; Vivix key from the user): confirm the client can
   publish audio with the Vivix-issued token in passthrough mode — confirmed. Measured agent-audio
