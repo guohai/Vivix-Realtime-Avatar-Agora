@@ -36,7 +36,10 @@ describe("buildJoinBody", () => {
       agent_rtc_uid: "666666",
       remote_rtc_uids: ["111111"],
       idle_timeout: 60,
-      turn_detection: { interrupt_mode: "interrupt" },
+      turn_detection: { config: {
+        start_of_speech: { mode: "vad", vad_config: { interrupt_duration_ms: 160, prefix_padding_ms: 800 } },
+        end_of_speech: { mode: "semantic", semantic_config: { silence_duration_ms: 320, max_wait_ms: 3000 } },
+      } },
       parameters: { data_channel: "datastream", enable_error_message: true },
     });
   });

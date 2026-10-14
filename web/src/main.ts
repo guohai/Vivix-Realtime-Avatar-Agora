@@ -11,7 +11,7 @@ const startBtn = $<HTMLButtonElement>("#start"), stopBtn = $<HTMLButtonElement>(
 const muteBtn = $<HTMLButtonElement>("#mute"), interruptBtn = $<HTMLButtonElement>("#interrupt");
 const soundBtn = $<HTMLButtonElement>("#sound"), status = $("#status");
 const setup = $("#setup"), credsToggle = $<HTMLButtonElement>("#creds-toggle");
-const transcript = $("#transcript"), timeline = $("#timeline"), latency = $("#latency");
+const transcript = $("#transcript"), timeline = $("#timeline"), latency = $("#latency"), response = $("#response");
 
 const { creds: initial, remembered } = loadCredentials(localStorage);
 remember.checked = remembered;
@@ -48,7 +48,7 @@ function showErrors(errors: Partial<Record<keyof Credentials, string>>) {
 
 let session: Session | undefined;
 let muted = false;
-const latencies: number[] = [];
+const latencies: number[] = [], responses: number[] = [];
 
 function setRunning(running: boolean) {
   startBtn.disabled = running;
@@ -61,6 +61,8 @@ function setRunning(running: boolean) {
   credsToggle.hidden = !running;
   credsToggle.textContent = "Show credentials";
 }
+
+const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
 
 function renderTranscript(lines: Line[]) {
   transcript.replaceChildren(...lines.map(l => {
@@ -95,8 +97,9 @@ startBtn.onclick = async () => {
   try { saveCredentials(localStorage, creds, remember.checked); }
   catch { status.textContent = "Could not save credentials on this device; continuing without remembering."; }
 
-  timeline.replaceChildren(); transcript.replaceChildren(); latencies.length = 0;
+  timeline.replaceChildren(); transcript.replaceChildren(); latencies.length = responses.length = 0;
   latency.textContent = "Relay + render: —";
+  response.textContent = "Agent response: —";
   muted = false; muteBtn.textContent = "Mute mic";
   setRunning(true);
   // Late callbacks from a superseded session must not touch the shared UI (a stopped one may still report).
@@ -109,11 +112,14 @@ startBtn.onclick = async () => {
       dt.textContent = label; dd.textContent = `${ms} ms`;
       timeline.append(dt, dd);
     },
-    latency: ms => {
+    latency: (ms, responseMs) => {
       if (!mine()) return;
       latencies.push(ms);
-      const avg = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
-      latency.textContent = `Relay + render: last ${ms} ms · avg ${avg} ms (${latencies.length} turns)`;
+      latency.textContent = `Relay + render: last ${ms} ms · avg ${avg(latencies)} ms (${latencies.length} turns)`;
+      if (responseMs !== null) {
+        responses.push(responseMs);
+        response.textContent = `Agent response: last ${responseMs} ms · avg ${avg(responses)} ms · you → avatar ${responseMs + ms} ms`;
+      }
     },
     transcript: lines => { if (mine()) renderTranscript(lines); },
     autoplayBlocked: () => { if (mine()) soundBtn.hidden = false; },

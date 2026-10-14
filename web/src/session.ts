@@ -7,12 +7,14 @@ import { joinConvo } from "./convo";
 import { joinAvatar, type AvatarLink } from "./avatar";
 import { startRelay, type Relay } from "./relay";
 import { applyMessage, type Line } from "./transcript";
-import { Timeline, OnsetTracker } from "./metrics";
+import { Timeline, OnsetTracker, ResponseTimer } from "./metrics";
 
 export interface SessionEvents {
   status(text: string): void;
   mark(label: string, ms: number): void;
-  latency(ms: number): void;
+  // relayMs: agent audio → avatar audio. responseMs: end of the user's speech → agent audio
+  // (null for turns the user did not start, such as the greeting).
+  latency(relayMs: number, responseMs: number | null): void;
   transcript(lines: Line[]): void;
   autoplayBlocked(): void;
   ended(reason: string): void;
@@ -37,6 +39,7 @@ export class Session {
   private sampler?: number;
   private timeline = new Timeline();
   private onset = new OnsetTracker();
+  private response = new ResponseTimer();
   private stopping = false;
   private stopSent = false;
   private wantMuted = false;
@@ -108,7 +111,10 @@ export class Session {
             this.mark("Agent audio relayed");
           }).catch(e => { if (!this.stopping) this.ev.status(`Relay failed: ${e.message}`); });
         },
-        message: msg => { this.lines = applyMessage(this.lines, msg); this.ev.transcript(this.lines); },
+        message: msg => {
+          if (msg.object === "user.transcription" && msg.final === true) this.response.userFinal(performance.now());
+          this.lines = applyMessage(this.lines, msg); this.ev.transcript(this.lines);
+        },
         error: m => this.ev.status(m),
       }).then(c => { this.convo = c; this.mark("Joined ConvoAI channel"); return c; });
     let convo: IAgoraRTCClient;
@@ -128,8 +134,10 @@ export class Session {
     this.mark("Mic live");
 
     this.sampler = window.setInterval(() => {
-      const ms = this.onset.sample(this.agentAudio?.getVolumeLevel() ?? 0, this.avatarAudio?.getVolumeLevel() ?? 0, performance.now());
-      if (ms !== null) this.ev.latency(ms);
+      const now = performance.now();
+      this.response.voice(this.mic?.getVolumeLevel() ?? 0, now);
+      const ms = this.onset.sample(this.agentAudio?.getVolumeLevel() ?? 0, this.avatarAudio?.getVolumeLevel() ?? 0, now);
+      if (ms !== null) this.ev.latency(ms, this.response.agentOnset(now - ms));
     }, 50);
   }
 

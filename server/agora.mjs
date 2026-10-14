@@ -35,7 +35,14 @@ export function buildJoinBody({ pipelineId, persona }, ids) {
     agent_rtc_uid: String(ids.agentUid),
     remote_rtc_uids: [String(ids.userUid)],
     idle_timeout: IDLE_TIMEOUT_SECONDS,
-    turn_detection: { interrupt_mode: "interrupt" },
+    turn_detection: {
+      config: {
+        start_of_speech: { mode: "vad", vad_config: { interrupt_duration_ms: 160, prefix_padding_ms: 800 } },
+        // Semantic end of turn: 320 ms of silence instead of VAD's 640 ms (English and Chinese;
+        // other languages fall back to VAD).
+        end_of_speech: { mode: "semantic", semantic_config: { silence_duration_ms: 320, max_wait_ms: 3000 } },
+      },
+    },
     // Transcripts over the RTC datastream, so the browser needs no RTM SDK.
     parameters: { data_channel: "datastream", enable_error_message: true },
   };

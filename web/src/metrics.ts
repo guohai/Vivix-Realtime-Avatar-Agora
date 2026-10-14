@@ -39,3 +39,24 @@ export class OnsetTracker {
     return null;
   }
 }
+
+// Per-turn agent response time: from the end of the user's speech (last voiced mic sample
+// before ConvoAI's final transcript) to the agent's first audible TTS audio. Covers turn
+// detection, ASR, LLM and TTS — everything on the ConvoAI side.
+export class ResponseTimer {
+  private lastVoice: number | null = null;
+  private pending: number | null = null;
+  private threshold: number;
+  constructor({ threshold = 0.05 } = {}) { this.threshold = threshold; }
+
+  voice(level: number, now: number): void { if (level > this.threshold) this.lastVoice = now; }
+
+  userFinal(_now: number): void { if (this.lastVoice !== null) this.pending = this.lastVoice; }
+
+  agentOnset(now: number): number | null {
+    if (this.pending === null || now <= this.pending) return null;
+    const ms = Math.round(now - this.pending);
+    this.pending = null;
+    return ms;
+  }
+}
