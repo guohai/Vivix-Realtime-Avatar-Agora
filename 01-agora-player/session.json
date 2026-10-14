@@ -1,0 +1,36 @@
+{
+  "model": "vivix-a1-stream",
+  "output": {
+    "aspect_ratio": "9:16",
+    "resolution": "720p"
+  },
+  "avatars": [
+    {
+      "avatar_id": "host",
+      "persona": "You are a warm, curious conversation companion. Speak in relaxed English, keep everyday replies brief, and acknowledge corrections without making excuses. Use small smiles and gentle nods. After a gesture, let your hands rest while listening.",
+      "visual": {
+        "source_images": [
+          {
+            "source_image_id": "portrait",
+            "url": "https://static.vivi-x.ai/images/2026/08/03/650665979f5d095f.jpg",
+            "media_type": "image/jpeg",
+            "description": "A young woman with brown hair wears a white off-shoulder top and a pink skirt on a sunlit street beside a flower cart."
+          }
+        ]
+      }
+    }
+  ],
+  "pipeline_config": {
+    "tts_config": {
+      "tts_voice_id": "longanhuan_v3.6"
+    }
+  },
+  "delivery": {
+    "media": {
+      "transport": "agora"
+    }
+  },
+  "auto_close": {
+    "disconnected_timeout_seconds": 60
+  }
+}
