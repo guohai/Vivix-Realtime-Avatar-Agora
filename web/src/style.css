@@ -35,4 +35,3 @@ button.primary { background: var(--accent); } button:disabled { opacity: .45; cu
 .latency { margin: 0; display: grid; gap: 2px; }
 .latency dt { margin-top: 8px; font-weight: 600; } .latency dt small { font-weight: 400; color: var(--muted); }
 .latency dd { margin: 0; font-variant-numeric: tabular-nums; }
-#e2e { font-size: 16px; }

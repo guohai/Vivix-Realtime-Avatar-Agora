@@ -14,7 +14,7 @@ const muteBtn = $<HTMLButtonElement>("#mute"), interruptBtn = $<HTMLButtonElemen
 const soundBtn = $<HTMLButtonElement>("#sound"), status = $("#status");
 const setup = $("#setup"), credsToggle = $<HTMLButtonElement>("#creds-toggle");
 const micSelect = $<HTMLSelectElement>("#mic");
-const transcript = $("#transcript"), timeline = $("#timeline"), latency = $("#latency"), response = $("#response"), e2e = $("#e2e");
+const transcript = $("#transcript"), timeline = $("#timeline"), latency = $("#latency");
 
 const { creds: initial, remembered } = loadCredentials(localStorage);
 remember.checked = remembered;
@@ -74,7 +74,7 @@ micSelect.onchange = async () => {
   catch (e) { status.textContent = `Could not switch microphone: ${(e as Error).message}`; }
 };
 let muted = false;
-const latencies: number[] = [], responses: number[] = [], totals: number[] = [];
+const latencies: number[] = [];
 
 function setRunning(running: boolean) {
   startBtn.disabled = running;
@@ -123,8 +123,8 @@ startBtn.onclick = async () => {
   try { saveCredentials(localStorage, creds, remember.checked); }
   catch { status.textContent = "Could not save credentials on this device; continuing without remembering."; }
 
-  timeline.replaceChildren(); transcript.replaceChildren(); latencies.length = responses.length = totals.length = 0;
-  for (const el of [e2e, response, latency]) el.textContent = "—";
+  timeline.replaceChildren(); transcript.replaceChildren(); latencies.length = 0;
+  latency.textContent = "—";
   muted = false; muteBtn.textContent = "Mute mic";
   setRunning(true);
   // Late callbacks from a superseded session must not touch the shared UI (a stopped one may still report).
@@ -142,10 +142,6 @@ startBtn.onclick = async () => {
       const stat = (xs: number[], x: number) => { xs.push(x); return `last ${x} ms · avg ${avg(xs)} ms`; };
       const net = t.videoNetworkMs != null ? ` · video network ${t.videoNetworkMs} ms` : "";
       latency.textContent = `${stat(latencies, t.renderMs)} (${latencies.length} turns)${net}`;
-      if (t.responseMs !== null) {
-        response.textContent = stat(responses, t.responseMs);
-        e2e.textContent = stat(totals, t.responseMs + t.renderMs);
-      }
     },
     transcript: lines => { if (mine()) renderTranscript(lines); },
     autoplayBlocked: () => { if (mine()) soundBtn.hidden = false; },

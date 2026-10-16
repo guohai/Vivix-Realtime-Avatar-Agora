@@ -40,33 +40,11 @@ export class OnsetTracker {
   }
 }
 
-// Per-turn agent response time: from the end of the user's speech (last voiced mic sample
-// before ConvoAI's final transcript) to the agent's first audible TTS audio. Covers turn
-// detection, ASR, LLM and TTS — everything on the ConvoAI side.
-export class ResponseTimer {
-  private lastVoice: number | null = null;
-  private pending: number | null = null;
-  private threshold: number;
-  constructor({ threshold = 0.05 } = {}) { this.threshold = threshold; }
-
-  voice(level: number, now: number): void { if (level > this.threshold) this.lastVoice = now; }
-
-  userFinal(_now: number): void { if (this.lastVoice !== null) this.pending = this.lastVoice; }
-
-  agentOnset(now: number): number | null {
-    if (this.pending === null || now <= this.pending) return null;
-    const ms = Math.round(now - this.pending);
-    this.pending = null;
-    return ms;
-  }
-}
 
 /** One spoken turn's timings, reported when the avatar starts speaking it. */
 export interface TurnTiming {
   /** Agent audio from Agora → avatar audio and video from Vivix. */
   renderMs: number;
-  /** End of the user's speech → agent audio (null for turns the user did not start). */
-  responseMs: number | null;
   /** Agora's end-to-end delay of the avatar video, Vivix → this browser. */
   videoNetworkMs: number | null;
 }

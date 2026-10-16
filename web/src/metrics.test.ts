@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Timeline, OnsetTracker, ResponseTimer } from "./metrics";
+import { Timeline, OnsetTracker } from "./metrics";
 
 describe("Timeline", () => {
   it("records ms since reset", () => {
@@ -46,30 +46,4 @@ describe("OnsetTracker", () => {
   });
 });
 
-describe("ResponseTimer", () => {
-  it("measures end of the user's speech to the agent's first audio, once per user turn", () => {
-    const r = new ResponseTimer({ threshold: 0.05 });
-    r.voice(0.3, 1000);
-    r.voice(0.2, 1800);                 // last voiced sample
-    r.voice(0.01, 2000);
-    expect(r.agentOnset(2500)).toBeNull(); // no final transcript yet (e.g. the greeting)
-    r.userFinal(2600);
-    expect(r.agentOnset(3900)).toBe(2100);
-    expect(r.agentOnset(4000)).toBeNull(); // already reported for this turn
-  });
-
-  it("ignores speech after the final transcript when timing that turn", () => {
-    const r = new ResponseTimer();
-    r.voice(0.3, 1000);
-    r.userFinal(1500);
-    r.voice(0.3, 1700);                 // echo or the next utterance
-    expect(r.agentOnset(2200)).toBe(1200);
-  });
-
-  it("does nothing without any voiced sample", () => {
-    const r = new ResponseTimer();
-    r.userFinal(1000);
-    expect(r.agentOnset(2000)).toBeNull();
-  });
-});
 

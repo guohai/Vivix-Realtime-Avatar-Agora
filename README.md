@@ -69,18 +69,11 @@ only in the page.
 
 ## Latency
 
-The side panel shows, for each turn:
+The side panel shows, for each turn, **Vivix rendering**: the agent's voice arriving → the
+avatar's voice and video arriving (both onsets taken from track volume levels), with Agora's
+measured network delay of the avatar video alongside. Below that, the startup timeline.
 
-- **End to end** — you stop speaking → you hear and see the avatar.
-- **Agora response** — you stop speaking → the agent's voice (turn detection, ASR, LLM, TTS).
-  The end of your speech is the last loud mic sample before ConvoAI's final transcript.
-- **Vivix rendering** — the agent's voice arrives → the avatar's voice and video arrive, with
-  Agora's measured network delay of the avatar video alongside.
-
-Typical run (English, borrowed pipeline): end to end ~5 s = Agora ~2.3 s + Vivix ~2.6 s, of
-which ~0.2–0.3 s is the video's network hop back. Below that, the startup timeline.
-
-Vivix rendering:
+Measured:
 
 - Spike (`02-convoai-spike`): agent→avatar onset of 2.25, 2.55 and 2.85 s (n=3).
 - This app's smoke runs: 3.05 and 3.15 s (n=2).

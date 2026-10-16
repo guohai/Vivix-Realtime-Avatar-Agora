@@ -7,7 +7,7 @@ import { joinConvo } from "./convo";
 import { joinAvatar, type AvatarLink } from "./avatar";
 import { startRelay, type Relay } from "./relay";
 import { applyMessage, visibleLines, TurnRevealer, type Line } from "./transcript";
-import { Timeline, OnsetTracker, ResponseTimer, type TurnTiming } from "./metrics";
+import { Timeline, OnsetTracker, type TurnTiming } from "./metrics";
 
 export interface SessionEvents {
   status(text: string): void;
@@ -43,7 +43,6 @@ export class Session {
   private sampler?: number;
   private timeline = new Timeline();
   private onset = new OnsetTracker();
-  private response = new ResponseTimer();
   private stopping = false;
   private stopSent = false;
   private wantMuted = false;
@@ -117,7 +116,6 @@ export class Session {
           }).catch(e => { if (!this.stopping) this.ev.status(`Relay failed: ${e.message}`); });
         },
         message: msg => {
-          if (msg.object === "user.transcription" && msg.final === true) this.response.userFinal(performance.now());
           this.lines = applyMessage(this.lines, msg);
           const turn = msg.turn_id ?? -1;
           if (msg.object === "assistant.transcription" && this.revealer.agentTurn(turn)) {
@@ -145,13 +143,10 @@ export class Session {
 
     this.sampler = window.setInterval(() => {
       const now = performance.now();
-      this.response.voice(this.mic?.getVolumeLevel() ?? 0, now);
       const ms = this.onset.sample(this.agentAudio?.getVolumeLevel() ?? 0, this.avatarAudio?.getVolumeLevel() ?? 0, now);
       if (ms !== null) {
-        const agentOnset = now - ms;
         this.ev.latency({
           renderMs: ms,
-          responseMs: this.response.agentOnset(agentOnset),
           videoNetworkMs: this.avatar?.videoDelayMs() ?? null,
         });
         // The avatar just started speaking: its text may show now.
