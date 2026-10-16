@@ -83,9 +83,8 @@ export class Session {
     const s = await startSession(toSessionBody(this.creds));
     this.started = s;
     this.check();
-    this.ev.mark("Vivix session created", s.timings.vivixCreateMs);
-    this.ev.mark("ConvoAI agent started", s.timings.convoJoinMs);
-    this.mark("Sessions ready");
+    // Every entry is time since Start; the two server calls ran in parallel inside this one.
+    this.mark(`Sessions created (Vivix ${s.timings.vivixCreateMs} ms ‖ ConvoAI ${s.timings.convoJoinMs} ms)`);
 
     // Channel B's RTC join is all publishing needs; avatarJoin also waits for the control socket.
     let rtcJoined!: (c: IAgoraRTCClient) => void;
@@ -112,7 +111,7 @@ export class Session {
             const relay = await startRelay(track, client);
             if (this.stopping) { await relay.close().catch(() => {}); return; }
             this.relay = relay;
-            this.mark("Agent audio relayed");
+            this.mark("Relay to Vivix ready");
           }).catch(e => { if (!this.stopping) this.ev.status(`Relay failed: ${e.message}`); });
         },
         message: msg => {

@@ -37,7 +37,7 @@ try {
   console.log(report.latency);
   console.log(report.transcript.slice(0, 6).join("\n"));
   await page.screenshot({ path: "test-results/smoke.png" }).catch(() => {});
-  if (!report.timeline.some(l => l.startsWith("Agent audio relayed"))) throw new Error("no 'Agent audio relayed' timeline entry");
+  if (!report.timeline.some(l => l.startsWith("Relay to Vivix ready"))) throw new Error("no 'Relay to Vivix ready' timeline entry");
   if (!report.transcript.some(l => l.startsWith("agent:"))) throw new Error("no agent transcript line");
   await page.click("#stop");
   await page.waitForFunction(() => /^Stopped\.$/.test(document.querySelector("#status").textContent), null, { timeout: 15_000 });
