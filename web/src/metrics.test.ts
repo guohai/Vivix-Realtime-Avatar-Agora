@@ -72,3 +72,4 @@ describe("ResponseTimer", () => {
     expect(r.agentOnset(2000)).toBeNull();
   });
 });
+

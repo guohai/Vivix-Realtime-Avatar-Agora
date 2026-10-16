@@ -11,7 +11,13 @@ export interface AvatarHandlers {
   error(message: string): void;
 }
 
-export interface AvatarLink { client: IAgoraRTCClient; ws: WebSocket; close(): Promise<void> }
+export interface AvatarLink {
+  client: IAgoraRTCClient;
+  ws: WebSocket;
+  /** Agora's current end-to-end delay of the avatar video, Vivix → this browser, in ms. */
+  videoDelayMs(): number | undefined;
+  close(): Promise<void>;
+}
 
 const CONTROL_TIMEOUT_MS = 15_000;
 const asUid = (v: string) => (/^\d+$/.test(v) && Number.isSafeInteger(Number(v)) ? Number(v) : v);
@@ -79,6 +85,8 @@ export async function joinAvatar(
 
   return {
     client, ws,
+    // 0 until Agora has collected stats for the stream: report that as unknown.
+    videoDelayMs: () => client.getRemoteVideoStats()[m.publisherUid]?.end2EndDelay || undefined,
     async close() {
       closing = true;
       AgoraRTC.onAutoplayFailed = undefined;

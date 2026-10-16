@@ -1,8 +1,10 @@
 import "./style.css";
+import AgoraRTC from "agora-rtc-sdk-ng";
 import { FIELDS, SERVER_FIELD, loadCredentials, saveCredentials, validate, type Covered, type Credentials } from "./config";
 import { ApiError, fetchCovered } from "./api";
 import { Session, CancelledError } from "./session";
 import type { Line } from "./transcript";
+import { MIC_STORAGE_KEY, labelsHidden, micOptions } from "./mic";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const form = $<HTMLFormElement>("#creds");
@@ -11,7 +13,8 @@ const startBtn = $<HTMLButtonElement>("#start"), stopBtn = $<HTMLButtonElement>(
 const muteBtn = $<HTMLButtonElement>("#mute"), interruptBtn = $<HTMLButtonElement>("#interrupt");
 const soundBtn = $<HTMLButtonElement>("#sound"), status = $("#status");
 const setup = $("#setup"), credsToggle = $<HTMLButtonElement>("#creds-toggle");
-const transcript = $("#transcript"), timeline = $("#timeline"), latency = $("#latency"), response = $("#response");
+const micSelect = $<HTMLSelectElement>("#mic");
+const transcript = $("#transcript"), timeline = $("#timeline"), latency = $("#latency"), response = $("#response"), e2e = $("#e2e");
 
 const { creds: initial, remembered } = loadCredentials(localStorage);
 remember.checked = remembered;
@@ -47,8 +50,31 @@ function showErrors(errors: Partial<Record<keyof Credentials, string>>) {
 }
 
 let session: Session | undefined;
+
+// ---- Microphone choice ----------------------------------------------------------------------
+const savedMic = () => { try { return localStorage.getItem(MIC_STORAGE_KEY) ?? ""; } catch { return ""; } };
+let micLabelsHidden = true;
+
+// askPermission: the browser hides device names until the mic is allowed, so the first click on
+// the dropdown asks once and then lists the real names.
+async function refreshMics(askPermission = false) {
+  let devices: MediaDeviceInfo[];
+  try { devices = await AgoraRTC.getMicrophones(!askPermission); }
+  catch { devices = []; }
+  micLabelsHidden = labelsHidden(devices);
+  const { options, selected } = micOptions(devices, micSelect.value || savedMic());
+  micSelect.replaceChildren(...options.map(o => new Option(o.label, o.id, false, o.id === selected)));
+}
+void refreshMics();
+AgoraRTC.onMicrophoneChanged = () => void refreshMics();
+micSelect.addEventListener("pointerdown", () => { if (micLabelsHidden) void refreshMics(true); });
+micSelect.onchange = async () => {
+  try { localStorage.setItem(MIC_STORAGE_KEY, micSelect.value); } catch { /* not remembered */ }
+  try { await session?.setMicrophone(micSelect.value); }
+  catch (e) { status.textContent = `Could not switch microphone: ${(e as Error).message}`; }
+};
 let muted = false;
-const latencies: number[] = [], responses: number[] = [];
+const latencies: number[] = [], responses: number[] = [], totals: number[] = [];
 
 function setRunning(running: boolean) {
   startBtn.disabled = running;
@@ -97,9 +123,8 @@ startBtn.onclick = async () => {
   try { saveCredentials(localStorage, creds, remember.checked); }
   catch { status.textContent = "Could not save credentials on this device; continuing without remembering."; }
 
-  timeline.replaceChildren(); transcript.replaceChildren(); latencies.length = responses.length = 0;
-  latency.textContent = "Relay + render: —";
-  response.textContent = "Agent response: —";
+  timeline.replaceChildren(); transcript.replaceChildren(); latencies.length = responses.length = totals.length = 0;
+  for (const el of [e2e, response, latency]) el.textContent = "—";
   muted = false; muteBtn.textContent = "Mute mic";
   setRunning(true);
   // Late callbacks from a superseded session must not touch the shared UI (a stopped one may still report).
@@ -112,13 +137,14 @@ startBtn.onclick = async () => {
       dt.textContent = label; dd.textContent = `${ms} ms`;
       timeline.append(dt, dd);
     },
-    latency: (ms, responseMs) => {
+    latency: t => {
       if (!mine()) return;
-      latencies.push(ms);
-      latency.textContent = `Relay + render: last ${ms} ms · avg ${avg(latencies)} ms (${latencies.length} turns)`;
-      if (responseMs !== null) {
-        responses.push(responseMs);
-        response.textContent = `Agent response: last ${responseMs} ms · avg ${avg(responses)} ms · you → avatar ${responseMs + ms} ms`;
+      const stat = (xs: number[], x: number) => { xs.push(x); return `last ${x} ms · avg ${avg(xs)} ms`; };
+      const net = t.videoNetworkMs != null ? ` · video network ${t.videoNetworkMs} ms` : "";
+      latency.textContent = `${stat(latencies, t.renderMs)} (${latencies.length} turns)${net}`;
+      if (t.responseMs !== null) {
+        response.textContent = stat(responses, t.responseMs);
+        e2e.textContent = stat(totals, t.responseMs + t.renderMs);
       }
     },
     transcript: lines => { if (mine()) renderTranscript(lines); },
@@ -126,7 +152,11 @@ startBtn.onclick = async () => {
     ended: reason => { if (session === s) void stop(reason); },
   });
   session = s;
-  try { await s.start(); }
+  await s.setMicrophone(micSelect.value);
+  try {
+    await s.start();
+    if (micLabelsHidden) void refreshMics(); // permission granted now: show real names
+  }
   catch (e) {
     if (e instanceof CancelledError || session !== s) return; // Stop was pressed (or a newer session owns the UI)
     const err = e as ApiError;

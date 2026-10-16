@@ -60,3 +60,14 @@ export class ResponseTimer {
     return ms;
   }
 }
+
+/** One spoken turn's timings, reported when the avatar starts speaking it. */
+export interface TurnTiming {
+  /** Agent audio from Agora → avatar audio and video from Vivix. */
+  renderMs: number;
+  /** End of the user's speech → agent audio (null for turns the user did not start). */
+  responseMs: number | null;
+  /** Agora's end-to-end delay of the avatar video, Vivix → this browser. */
+  videoNetworkMs: number | null;
+}
+

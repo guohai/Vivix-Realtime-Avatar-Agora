@@ -7,14 +7,12 @@ import { joinConvo } from "./convo";
 import { joinAvatar, type AvatarLink } from "./avatar";
 import { startRelay, type Relay } from "./relay";
 import { applyMessage, visibleLines, TurnRevealer, type Line } from "./transcript";
-import { Timeline, OnsetTracker, ResponseTimer } from "./metrics";
+import { Timeline, OnsetTracker, ResponseTimer, type TurnTiming } from "./metrics";
 
 export interface SessionEvents {
   status(text: string): void;
   mark(label: string, ms: number): void;
-  // relayMs: agent audio → avatar audio. responseMs: end of the user's speech → agent audio
-  // (null for turns the user did not start, such as the greeting).
-  latency(relayMs: number, responseMs: number | null): void;
+  latency(turn: TurnTiming): void;
   transcript(lines: Line[]): void;
   autoplayBlocked(): void;
   ended(reason: string): void;
@@ -49,6 +47,7 @@ export class Session {
   private stopping = false;
   private stopSent = false;
   private wantMuted = false;
+  private micId = ""; // "" = system default
 
   constructor(private creds: Credentials, private videoEl: HTMLElement, private ev: SessionEvents) {}
 
@@ -79,7 +78,7 @@ export class Session {
   private async run(): Promise<void> {
     this.timeline.reset();
     this.ev.status("Starting…");
-    const micReady = AgoraRTC.createMicrophoneAudioTrack({ AEC: true, ANS: true, AGC: true });
+    const micReady = AgoraRTC.createMicrophoneAudioTrack({ AEC: true, ANS: true, AGC: true, ...(this.micId ? { microphoneId: this.micId } : {}) });
     // A mic granted after Stop is closed the moment it arrives; never awaited by stop().
     micReady.then(t => { this.mic = t; if (this.stopping) t.close(); }, () => {});
     const s = await startSession(toSessionBody(this.creds));
@@ -149,7 +148,12 @@ export class Session {
       this.response.voice(this.mic?.getVolumeLevel() ?? 0, now);
       const ms = this.onset.sample(this.agentAudio?.getVolumeLevel() ?? 0, this.avatarAudio?.getVolumeLevel() ?? 0, now);
       if (ms !== null) {
-        this.ev.latency(ms, this.response.agentOnset(now - ms));
+        const agentOnset = now - ms;
+        this.ev.latency({
+          renderMs: ms,
+          responseMs: this.response.agentOnset(agentOnset),
+          videoNetworkMs: this.avatar?.videoDelayMs() ?? null,
+        });
         // The avatar just started speaking: its text may show now.
         this.revealer.avatarStarted();
         this.showTranscript();
@@ -217,6 +221,12 @@ export class Session {
   }
 
   async setMuted(muted: boolean): Promise<void> { this.wantMuted = muted; await this.mic?.setMuted(muted); }
+
+  /** Picks the microphone: used when the mic is created, or switched live if it already is. */
+  async setMicrophone(id: string): Promise<void> {
+    this.micId = id;
+    await this.mic?.setDevice(id || "default");
+  }
 
   resumeAudio(): void { this.avatarAudio?.play(); }
 }

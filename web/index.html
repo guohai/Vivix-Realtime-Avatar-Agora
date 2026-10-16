@@ -13,6 +13,7 @@
       <button id="creds-toggle" type="button" hidden>Show credentials</button>
       <form id="creds" autocomplete="off"></form>
       <label class="remember"><input type="checkbox" id="remember"> Remember on this device</label>
+      <label class="mic">Microphone <select id="mic"><option value="">System default</option></select></label>
       <div class="controls">
         <button id="start" class="primary">Start</button>
         <button id="stop" disabled>Stop</button>
@@ -26,12 +27,16 @@
       <button id="sound" hidden>Enable sound</button>
     </section>
     <section class="panel side">
+      <h2>Latency per turn</h2>
+      <dl class="latency">
+        <dt>End to end <small>you stop → avatar speaks</small></dt><dd id="e2e">—</dd>
+        <dt>Agora response <small>you stop → agent voice</small></dt><dd id="response">—</dd>
+        <dt>Vivix rendering <small>agent voice → avatar voice + video</small></dt><dd id="latency">—</dd>
+      </dl>
       <h2>Transcript</h2>
       <ol id="transcript"></ol>
-      <h2>Latency</h2>
+      <h2>Startup</h2>
       <dl id="timeline"></dl>
-      <p id="response" class="muted">Agent response: —</p>
-      <p id="latency" class="muted">Relay + render: —</p>
     </section>
   </main>
   <script type="module" src="/src/main.ts"></script>
